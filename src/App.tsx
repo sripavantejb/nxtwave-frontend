@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react
 import { AnimatePresence, motion } from 'framer-motion'
 import { ToastContainer } from 'react-toastify'
 import Home from './pages/Home'
+import About from './pages/About'
 import Rate from './pages/Rate'
 import Guidelines from './pages/Guidelines'
 import Quiz from './pages/Quiz'
@@ -46,8 +47,8 @@ function Navbar() {
         </button>
         <div className={`nav-links ${isMenuOpen ? 'open' : ''}`}>
           <Link className="nav-link" to="/" onClick={closeMenu}>Home</Link>
-          <a className="nav-link" href="javascript:void(0)" onClick={closeMenu}>About</a>
-          <a className="nav-link" href="javascript:void(0)" onClick={closeMenu}>Get Started</a>
+          <Link className="nav-link" to="/about" onClick={closeMenu}>About</Link>
+          <Link className="nav-link" to="/" onClick={closeMenu}>Get Started</Link>
         </div>
       </div>
     </div>
@@ -69,8 +70,8 @@ function Footer() {
             <h4 className="footer-heading">Quick Links</h4>
             <ul className="footer-links">
               <li><Link to="/">Home</Link></li>
-              <li><a href="javascript:void(0)">About</a></li>
-              <li><a href="javascript:void(0)">Get Started</a></li>
+              <li><Link to="/about">About</Link></li>
+              <li><Link to="/">Get Started</Link></li>
             </ul>
           </div>
           <div className="footer-section">
@@ -108,6 +109,7 @@ function AppRoutes() {
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={<PageTransition><Home /></PageTransition>} />
+        <Route path="/about" element={<PageTransition><About /></PageTransition>} />
         <Route path="/rate/:topicId" element={<PageTransition><Rate /></PageTransition>} />
         <Route path="/guidelines/:topicId/:rating" element={<PageTransition><Guidelines /></PageTransition>} />
         <Route path="/quiz/:topicId/:rating" element={<PageTransition><Quiz /></PageTransition>} />
