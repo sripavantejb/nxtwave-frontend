@@ -28,10 +28,34 @@ export type Flashcard = {
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'https://nxtwave-backend-1.onrender.com'
 
+async function request<T>(path: string, params?: URLSearchParams): Promise<T> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 12000)
+  try {
+    const url = params ? `${BASE_URL}${path}?${params.toString()}` : `${BASE_URL}${path}`
+    const res = await fetch(url, {
+      mode: 'cors',
+      cache: 'no-store',
+      signal: controller.signal
+    })
+    if (!res.ok) {
+      const maybeJson = await res.json().catch(() => ({}))
+      const message = (maybeJson as any).error || (maybeJson as any).message || `Request failed (${res.status})`
+      throw new Error(message)
+    }
+    return res.json() as Promise<T>
+  } catch (err: unknown) {
+    if ((err as Error).name === 'AbortError') {
+      throw new Error('Network timeout. Please try again.')
+    }
+    throw err as Error
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 export async function fetchTopics(): Promise<Topic[]> {
-  const res = await fetch(`${BASE_URL}/api/topics`)
-  if (!res.ok) throw new Error('Failed to load topics')
-  return res.json()
+  return request<Topic[]>('/api/topics')
 }
 
 export async function pingHealth(): Promise<void> {
@@ -42,22 +66,16 @@ export async function pingHealth(): Promise<void> {
   }
 }
 export async function fetchQuiz(topicId: string, rating: number): Promise<{ topicId: string, rating: number, questions: QuizQuestion[] }> {
-  const url = new URL(`${BASE_URL}/api/quiz`)
-  url.searchParams.set('topicId', topicId)
-  url.searchParams.set('rating', String(rating))
-  const res = await fetch(url.toString())
-  if (!res.ok) throw new Error('Failed to load quiz')
-  return res.json()
+  const params = new URLSearchParams()
+  params.set('topicId', topicId)
+  params.set('rating', String(rating))
+  return request<{ topicId: string, rating: number, questions: QuizQuestion[] }>('/api/quiz', params)
 }
 
 export async function fetchRandomFlashcard(excludeIds: string[] = []): Promise<{ flashcard: Flashcard }> {
-  const url = new URL(`${BASE_URL}/api/flashcards/random`)
-  if (excludeIds.length > 0) {
-    url.searchParams.set('excludeIds', excludeIds.join(','))
-  }
-  const res = await fetch(url.toString())
-  if (!res.ok) throw new Error('Failed to load flashcard')
-  return res.json()
+  const params = new URLSearchParams()
+  if (excludeIds.length > 0) params.set('excludeIds', excludeIds.join(','))
+  return request<{ flashcard: Flashcard }>('/api/flashcards/random', params)
 }
 
 export async function fetchFollowUpFlashcard(
@@ -65,16 +83,11 @@ export async function fetchFollowUpFlashcard(
   rating: number,
   excludeIds: string[] = []
 ): Promise<{ flashcard: Flashcard }> {
-  const url = new URL(`${BASE_URL}/api/flashcards/follow-up`)
-  url.searchParams.set('topicId', topicId)
-  url.searchParams.set('rating', String(rating))
-  if (excludeIds.length > 0) {
-    url.searchParams.set('excludeIds', excludeIds.join(','))
-  }
-
-  const res = await fetch(url.toString())
-  if (!res.ok) throw new Error('Failed to load follow-up flashcard')
-  return res.json()
+  const params = new URLSearchParams()
+  params.set('topicId', topicId)
+  params.set('rating', String(rating))
+  if (excludeIds.length > 0) params.set('excludeIds', excludeIds.join(','))
+  return request<{ flashcard: Flashcard }>('/api/flashcards/follow-up', params)
 }
 
 export async function fetchSingleQuestion(
@@ -82,16 +95,11 @@ export async function fetchSingleQuestion(
   rating: number,
   excludeIds: string[] = []
 ): Promise<{ question: QuizQuestion }> {
-  const url = new URL(`${BASE_URL}/api/question`)
-  url.searchParams.set('topicId', topicId)
-  url.searchParams.set('rating', String(rating))
-  if (excludeIds.length > 0) {
-    url.searchParams.set('excludeIds', excludeIds.join(','))
-  }
-
-  const res = await fetch(url.toString())
-  if (!res.ok) throw new Error('Failed to load question')
-  return res.json()
+  const params = new URLSearchParams()
+  params.set('topicId', topicId)
+  params.set('rating', String(rating))
+  if (excludeIds.length > 0) params.set('excludeIds', excludeIds.join(','))
+  return request<{ question: QuizQuestion }>('/api/question', params)
 }
 
 
