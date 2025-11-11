@@ -6,8 +6,10 @@ import Home from './pages/Home'
 import About from './pages/About'
 import Rate from './pages/Rate'
 import Guidelines from './pages/Guidelines'
+import ConceptualGuidelines from './pages/ConceptualGuidelines'
 import Quiz from './pages/Quiz'
 import Results from './pages/Results'
+import ConceptualQuizFlow from './components/ConceptualQuizFlow'
 import 'katex/dist/katex.min.css'
 import 'react-toastify/dist/ReactToastify.css'
 import './App.css'
@@ -15,6 +17,8 @@ import './index.css'
 
 function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const location = useLocation()
+  const isHomePage = location.pathname === '/'
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen)
@@ -24,16 +28,39 @@ function Navbar() {
     setIsMenuOpen(false)
   }
 
+  const scrollToSection = (sectionId: string) => {
+    closeMenu()
+    if (isHomePage) {
+      const element = document.getElementById(sectionId)
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }
+  }
+
+  const handleNavClick = (e: React.MouseEvent, sectionId: string, path?: string) => {
+    if (isHomePage && !path) {
+      e.preventDefault()
+      scrollToSection(sectionId)
+    } else {
+      closeMenu()
+    }
+  }
+
   return (
-    <div className="navbar">
+    <nav className="navbar">
       <div className="container navbar-inner">
-        <Link to="/" className="brand" onClick={closeMenu}>
+        <Link 
+          to="/" 
+          className="brand" 
+          onClick={(e: React.MouseEvent) => handleNavClick(e, 'home')}
+        >
           <img 
             src="https://res.cloudinary.com/dqataciy5/image/upload/v1762799447/Screenshot_2025-11-11_at_12.00.06_AM_xiuruw.png" 
             alt="NxtQuiz logo" 
             className="brand-logo"
           />
-          <span>NxtQuiz</span>
+          <span className="brand-name">NxtQuiz</span>
         </Link>
         <button 
           className="hamburger"
@@ -46,12 +73,64 @@ function Navbar() {
           <span className={`hamburger-line ${isMenuOpen ? 'open' : ''}`}></span>
         </button>
         <div className={`nav-links ${isMenuOpen ? 'open' : ''}`}>
-          <Link className="nav-link" to="/" onClick={closeMenu}>Home</Link>
-          <Link className="nav-link" to="/about" onClick={closeMenu}>About</Link>
-          <Link className="nav-link" to="/" onClick={closeMenu}>Get Started</Link>
+          <Link 
+            className="nav-link" 
+            to="/" 
+            onClick={(e: React.MouseEvent) => handleNavClick(e, 'home')}
+          >
+            Home
+          </Link>
+          {isHomePage ? (
+            <a 
+              className="nav-link" 
+              href="#learn-concepts"
+              onClick={(e) => {
+                e.preventDefault()
+                scrollToSection('learn-concepts')
+              }}
+            >
+              Learn Concepts
+            </a>
+          ) : (
+            <Link className="nav-link" to="/conceptual-guidelines" onClick={closeMenu}>
+              Learn Concepts
+            </Link>
+          )}
+          {isHomePage ? (
+            <a 
+              className="nav-link" 
+              href="#about"
+              onClick={(e) => {
+                e.preventDefault()
+                scrollToSection('about')
+              }}
+            >
+              About
+            </a>
+          ) : (
+            <Link className="nav-link" to="/about" onClick={closeMenu}>
+              About
+            </Link>
+          )}
+          {isHomePage ? (
+            <a 
+              className="nav-link nav-cta" 
+              href="#topics"
+              onClick={(e) => {
+                e.preventDefault()
+                scrollToSection('topics')
+              }}
+            >
+              Get Started
+            </a>
+          ) : (
+            <Link className="nav-link nav-cta" to="/" onClick={closeMenu}>
+              Get Started
+            </Link>
+          )}
         </div>
       </div>
-    </div>
+    </nav>
   )
 }
 
@@ -112,7 +191,9 @@ function AppRoutes() {
         <Route path="/about" element={<PageTransition><About /></PageTransition>} />
         <Route path="/rate/:topicId" element={<PageTransition><Rate /></PageTransition>} />
         <Route path="/guidelines/:topicId/:rating" element={<PageTransition><Guidelines /></PageTransition>} />
+        <Route path="/conceptual-guidelines" element={<PageTransition><ConceptualGuidelines /></PageTransition>} />
         <Route path="/quiz/:topicId/:rating" element={<PageTransition><Quiz /></PageTransition>} />
+        <Route path="/conceptual-learning" element={<PageTransition><ConceptualQuizFlow /></PageTransition>} />
         <Route path="/results" element={<PageTransition><Results /></PageTransition>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

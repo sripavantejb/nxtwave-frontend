@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { fetchTopics } from '../api/client'
 import type { Topic } from '../api/client'
 import MathBlock from '../components/MathBlock'
+import Loader from '../components/Loader'
 
 export default function Rate() {
   const { topicId } = useParams()
@@ -104,7 +105,7 @@ export default function Rate() {
     )
   }
 
-  if (loading) return <p className="muted" style={{ padding: 24 }}>Loading...</p>
+  if (loading) return <Loader message="Loading topic..." />
   if (!topic) return <p className="muted" style={{ padding: 24 }}>Topic not found.</p>
 
   return (

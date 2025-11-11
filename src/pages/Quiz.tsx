@@ -4,6 +4,7 @@ import { toast } from 'react-toastify'
 import { fetchQuiz } from '../api/client'
 import type { QuizQuestion } from '../api/client'
 import MathBlock from '../components/MathBlock'
+import Loader from '../components/Loader'
 
 // Fullscreen API type extensions
 interface DocumentWithFullscreen extends Document {
@@ -420,7 +421,23 @@ export default function Quiz() {
   }, [loading, topicId, rating, clearQuizStorage, navigate, incrementTabSwitchCount, resetTabSwitchCount, exitFullscreen])
 
   const current = questions[index]
-  const progressText = useMemo(() => `Question ${index + 1} of 6`, [index])
+  const totalQuestions = useMemo(() => (questions.length > 0 ? questions.length : 6), [questions.length])
+  const progressText = useMemo(() => `Question ${Math.min(index + 1, totalQuestions)} of ${totalQuestions}`, [index, totalQuestions])
+  const progressPercentage = useMemo(() => {
+    if (totalQuestions === 0) return 0
+    return Math.min(100, Math.round((answers.length / totalQuestions) * 100))
+  }, [answers.length, totalQuestions])
+  const formattedTopic = useMemo(() => {
+    if (!topicId) return 'Live Practice Session'
+    return topicId
+      .replace(/[-_]/g, ' ')
+      .replace(/\b\w/g, (char: string) => char.toUpperCase())
+  }, [topicId])
+  const difficultyLabel = current?.difficulty ?? 'medium'
+  const remainingWarnings = useMemo(() => Math.max(0, MAX_TAB_SWITCHES - getTabSwitchCount()), [getTabSwitchCount])
+  const answeredCount = answers.length
+  const remainingCount = Math.max(totalQuestions - (index + 1), 0)
+  const timerIsCritical = timer <= 10
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function handleSubmit(_fromTimeout = false) {
@@ -454,7 +471,7 @@ export default function Quiz() {
     }
   }
 
-  if (loading) return <p className="muted" style={{ padding: 24 }}>Loading quiz…</p>
+  if (loading) return <Loader message="Loading your quiz..." />
   if (error) return <p className="muted" style={{ padding: 24 }}>Error: {error}</p>
   if (!current) return <p className="muted" style={{ padding: 24 }}>No questions available.</p>
 
@@ -474,33 +491,97 @@ export default function Quiz() {
 
   return (
     <>
-      <div style={{ padding: 24 }}>
-        <div className="question-card card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span className="pill">{timer}s</span>
-            <span className="progress">{progressText}</span>
-          </div>
-          <div style={{ marginTop: 6, fontWeight: 600 }}>
-            {renderText(current.question)}
-          </div>
-          <div className="options">
-            {current.options.map((opt, i) => (
-              <button
-                key={i}
-                className={`option-btn ${selected === i ? 'selected' : ''}`}
-                onClick={() => setSelected(i)}
-              >
-                {renderText(opt)}
-              </button>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-            <button className="btn" onClick={() => handleSubmit(false)} disabled={selected === null}>
-              Submit
-            </button>
-            <button className="btn" onClick={() => handleSubmit(true)}>
-              Skip
-            </button>
+      <div className="quiz-page">
+        <div className="quiz-shell">
+          <header className="quiz-header card">
+            <div className="quiz-header-main">
+              <p className="quiz-section-label">Live Assessment</p>
+              <h1 className="quiz-title">{formattedTopic}</h1>
+              <div className="quiz-header-meta">
+                <span className="quiz-chip">{progressText}</span>
+                {rating && <span className="quiz-chip">Level {rating}</span>}
+                <span className={`quiz-chip difficulty-${difficultyLabel}`}>{difficultyLabel.charAt(0).toUpperCase() + difficultyLabel.slice(1)} Focus</span>
+              </div>
+            </div>
+            <div className="quiz-header-panel">
+              <div className="quiz-timer">
+                <span className="quiz-timer-label">Time Left</span>
+                <span className={`quiz-timer-value ${timerIsCritical ? 'danger' : ''}`}>{timer}s</span>
+              </div>
+              <div className="quiz-progress">
+                <div className="quiz-progress-bar">
+                  <div
+                    className="quiz-progress-bar-fill"
+                    style={{ width: `${progressPercentage > 0 ? progressPercentage : 6}%` }}
+                  />
+                </div>
+                <span className="quiz-progress-label">{progressText}</span>
+              </div>
+            </div>
+          </header>
+
+          <div className="quiz-body">
+            <aside className="quiz-sidebar">
+              <div className="card quiz-sidebar-card">
+                <h2 className="quiz-sidebar-title">Session Snapshot</h2>
+                <ul className="quiz-sidebar-list">
+                  <li>
+                    <span>Answered</span>
+                    <strong>{answeredCount}</strong>
+                  </li>
+                  <li>
+                    <span>Remaining</span>
+                    <strong>{remainingCount}</strong>
+                  </li>
+                  <li>
+                    <span>Difficulty</span>
+                    <strong className={`difficulty-tag difficulty-${difficultyLabel}`}>
+                      {difficultyLabel.charAt(0).toUpperCase() + difficultyLabel.slice(1)}
+                    </strong>
+                  </li>
+                  <li>
+                    <span>Tab warnings</span>
+                    <strong>{remainingWarnings}</strong>
+                  </li>
+                </ul>
+              </div>
+              <div className="card quiz-sidebar-card">
+                <h3 className="quiz-sidebar-title">Exam Guidelines</h3>
+                <ul className="quiz-guidelines">
+                  <li>Each question is timed at 60 seconds.</li>
+                  <li>Submit to lock your answer or Skip to move ahead.</li>
+                  <li>Switching tabs more than twice will terminate the quiz.</li>
+                </ul>
+              </div>
+            </aside>
+
+            <section className="quiz-main card">
+              <div className="quiz-question-header">
+                <span className="quiz-question-badge">Question {Math.min(index + 1, totalQuestions)}</span>
+                <span className="quiz-question-progress">{progressText}</span>
+              </div>
+              <div className="quiz-question-text">{renderText(current.question)}</div>
+              <div className="quiz-options">
+                {current.options.map((opt, i) => (
+                  <button
+                    key={i}
+                    className={`option-btn ${selected === i ? 'selected' : ''}`}
+                    onClick={() => setSelected(i)}
+                  >
+                    <span className="option-index">{String.fromCharCode(65 + i)}</span>
+                    <span className="option-text">{renderText(opt)}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="quiz-actions">
+                <button className="btn btn-primary" onClick={() => handleSubmit(false)} disabled={selected === null}>
+                  Submit
+                </button>
+                <button className="btn btn-ghost" onClick={() => handleSubmit(true)}>
+                  Skip
+                </button>
+              </div>
+            </section>
           </div>
         </div>
       </div>
