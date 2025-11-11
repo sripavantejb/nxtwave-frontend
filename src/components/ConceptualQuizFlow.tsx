@@ -291,26 +291,15 @@ export default function ConceptualQuizFlow() {
       setError(null)
 
       try {
-        // Retry up to 2 times to avoid transient failures falling back to conceptual phase
-        let question: QuizQuestion | null = null
-        let lastError: unknown = null
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            const res = await fetchSingleQuestion(
-              currentConcept.topicId,
-              rating,
-              recentQuestionIds.current
-            )
-            question = res.question
-            break
-          } catch (e) {
-            lastError = e
-            // brief delay before retrying
-            await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 200 : 400))
-          }
-        }
+        // Single fast attempt - no retries for speed
+        const res = await fetchSingleQuestion(
+          currentConcept.topicId,
+          rating,
+          recentQuestionIds.current
+        )
+        const question = res.question
         if (!question) {
-          throw lastError ?? new Error('Unable to load a practice question.')
+          throw new Error('Unable to load a practice question.')
         }
         setPracticeQuestion(question)
         recentQuestionIds.current.push(question.id)

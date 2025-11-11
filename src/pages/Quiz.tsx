@@ -269,10 +269,8 @@ export default function Quiz() {
   // Enter fullscreen when quiz is ready
   useEffect(() => {
     if (!loading && questions.length > 0 && !fullscreenAttemptedRef.current) {
-      // Small delay to ensure DOM is ready
-      setTimeout(() => {
-        enterFullscreen()
-      }, 100)
+      // Immediate fullscreen for faster UX
+      enterFullscreen()
     }
   }, [loading, questions.length, enterFullscreen])
 
@@ -302,6 +300,41 @@ export default function Quiz() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, loading, timerStartTime, topicId, rating])
 
+  const current = questions[index]
+  const totalQuestions = useMemo(() => (questions.length > 0 ? questions.length : 6), [questions.length])
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleSubmit = useCallback((_fromTimeout = false) => {
+    if (!current) return
+    const record: AnswerRecord = {
+      questionId: current.id,
+      selectedIndex: selected,
+      correctIndex: current.answerIndex,
+      explanation: current.explanation,
+      question: current.question,
+      options: current.options,
+      difficulty: current.difficulty
+    }
+    const nextAnswers = [...answers, record]
+    setAnswers(nextAnswers)
+    
+    // Save answers to localStorage
+    localStorage.setItem(getStorageKey('answers'), JSON.stringify(nextAnswers))
+    
+    const nextIndex = index + 1
+    if (nextIndex >= 6 || nextIndex >= questions.length) {
+      const score = nextAnswers.reduce((acc, r) => acc + (r.selectedIndex === r.correctIndex ? 1 : 0), 0)
+      // Clear storage when quiz completes
+      clearQuizStorage()
+      // Exit fullscreen before navigating
+      exitFullscreen()
+      navigate('/results', { state: { score, total: 6, details: nextAnswers } })
+    } else {
+      setIndex(nextIndex)
+      localStorage.setItem(getStorageKey('index'), nextIndex.toString())
+    }
+  }, [current, selected, answers, index, questions.length, getStorageKey, clearQuizStorage, exitFullscreen, navigate])
+
   useEffect(() => {
     if (loading || !timerStartTime) return
     
@@ -318,12 +351,12 @@ export default function Quiz() {
       
       if (remaining <= 0) {
         clearInterval(id)
+        // Automatically submit and move to next question when timer reaches 0
         handleSubmit(true)
       }
     }, 1000)
     return () => clearInterval(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, loading, timerStartTime, topicId, rating])
+  }, [index, loading, timerStartTime, topicId, rating, getStorageKey, handleSubmit])
 
   // Warning for browser back button, refresh, or navigation away
   useEffect(() => {
@@ -420,8 +453,6 @@ export default function Quiz() {
     }
   }, [loading, topicId, rating, clearQuizStorage, navigate, incrementTabSwitchCount, resetTabSwitchCount, exitFullscreen])
 
-  const current = questions[index]
-  const totalQuestions = useMemo(() => (questions.length > 0 ? questions.length : 6), [questions.length])
   const progressText = useMemo(() => `Question ${Math.min(index + 1, totalQuestions)} of ${totalQuestions}`, [index, totalQuestions])
   const progressPercentage = useMemo(() => {
     if (totalQuestions === 0) return 0
@@ -438,38 +469,6 @@ export default function Quiz() {
   const answeredCount = answers.length
   const remainingCount = Math.max(totalQuestions - (index + 1), 0)
   const timerIsCritical = timer <= 10
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  function handleSubmit(_fromTimeout = false) {
-    if (!current) return
-    const record: AnswerRecord = {
-      questionId: current.id,
-      selectedIndex: selected,
-      correctIndex: current.answerIndex,
-      explanation: current.explanation,
-      question: current.question,
-      options: current.options,
-      difficulty: current.difficulty
-    }
-    const nextAnswers = [...answers, record]
-    setAnswers(nextAnswers)
-    
-    // Save answers to localStorage
-    localStorage.setItem(getStorageKey('answers'), JSON.stringify(nextAnswers))
-    
-    const nextIndex = index + 1
-    if (nextIndex >= 6 || nextIndex >= questions.length) {
-      const score = nextAnswers.reduce((acc, r) => acc + (r.selectedIndex === r.correctIndex ? 1 : 0), 0)
-      // Clear storage when quiz completes
-      clearQuizStorage()
-      // Exit fullscreen before navigating
-      exitFullscreen()
-      navigate('/results', { state: { score, total: 6, details: nextAnswers } })
-    } else {
-      setIndex(nextIndex)
-      localStorage.setItem(getStorageKey('index'), nextIndex.toString())
-    }
-  }
 
   if (loading) return <Loader message="Loading your quiz..." />
   if (error) return <p className="muted" style={{ padding: 24 }}>Error: {error}</p>
