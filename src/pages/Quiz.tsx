@@ -476,14 +476,16 @@ export default function Quiz() {
   if (!current) return <p className="muted" style={{ padding: 24 }}>No questions available.</p>
 
   const renderText = (text: string) => {
-    const parts = text.split(/(\$[^$]+\$)/g)
+    // Normalize escaped newlines from API (e.g., "\\n") and preserve them in rendering
+    const normalized = text.replace(/\\n/g, '\n')
+    const parts = normalized.split(/(\$[^$]+\$)/g)
     return (
       <>
         {parts.map((part, idx) => {
           if (part.startsWith('$') && part.endsWith('$')) {
             return <MathBlock key={idx} math={part.slice(1, -1)} inline={true} />
           }
-          return <span key={idx}>{part}</span>
+          return <span key={idx} style={{ whiteSpace: 'pre-wrap' }}>{part}</span>
         })}
       </>
     )
