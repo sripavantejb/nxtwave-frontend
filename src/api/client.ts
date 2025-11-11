@@ -26,7 +26,7 @@ export type Flashcard = {
   explanation: string
 }
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://nxtwave-backend-1.onrender.com'
 
 export async function fetchTopics(): Promise<Topic[]> {
   const res = await fetch(`${BASE_URL}/api/topics`)
