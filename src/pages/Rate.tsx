@@ -25,7 +25,11 @@ export default function Rate() {
           setLoading(false)
           return
         }
-        const found = topics.find(t => t.id === topicId)
+        // Try exact match first, then case-insensitive
+        let found = topics.find(t => t.id === topicId)
+        if (!found && topicId) {
+          found = topics.find(t => t.id.toLowerCase() === topicId.toLowerCase())
+        }
         if (found) {
           setTopic(found)
           // Start timer when topic is loaded
@@ -38,6 +42,7 @@ export default function Rate() {
       .catch((err) => {
         console.error('Error fetching topics:', err)
         setLoading(false)
+        // Don't set topic to null here - let the error UI handle it
       })
   }, [topicId])
 

@@ -56,7 +56,7 @@ if (import.meta.env.DEV) {
 
 async function request<T>(path: string, params?: URLSearchParams): Promise<T> {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 12000)
+  const timeoutId = setTimeout(() => controller.abort(), 45000)
   try {
     const url = params ? `${BASE_URL}${path}?${params.toString()}` : `${BASE_URL}${path}`
     
