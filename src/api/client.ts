@@ -34,6 +34,13 @@ export async function fetchTopics(): Promise<Topic[]> {
   return res.json()
 }
 
+export async function pingHealth(): Promise<void> {
+  try {
+    await fetch(`${BASE_URL}/api/health`, { cache: 'no-store', mode: 'cors' })
+  } catch {
+    // ignore - warmup only
+  }
+}
 export async function fetchQuiz(topicId: string, rating: number): Promise<{ topicId: string, rating: number, questions: QuizQuestion[] }> {
   const url = new URL(`${BASE_URL}/api/quiz`)
   url.searchParams.set('topicId', topicId)

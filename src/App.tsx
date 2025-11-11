@@ -14,6 +14,8 @@ import 'katex/dist/katex.min.css'
 import 'react-toastify/dist/ReactToastify.css'
 import './App.css'
 import './index.css'
+import { useEffect } from 'react'
+import { pingHealth } from './api/client'
 
 function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -202,6 +204,10 @@ function AppRoutes() {
 }
 
 export default function App() {
+  useEffect(() => {
+    // Pre-warm backend on first load (Render cold start)
+    pingHealth()
+  }, [])
   return (
     <BrowserRouter>
       <Navbar />
