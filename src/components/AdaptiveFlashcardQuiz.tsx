@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Flashcard, QuizQuestion } from '../api/client'
 import { fetchRandomFlashcard, fetchSingleQuestion } from '../api/client'
-import MathBlock from './MathBlock'
+import { renderText } from './renderText'
 
 type Phase = 'loading' | 'flashcard' | 'question' | 'result' | 'error'
 
@@ -173,19 +173,7 @@ export default function AdaptiveFlashcardQuiz() {
     loadRandomFlashcard('Loading next flashcard...')
   }, [loadRandomFlashcard])
 
-  const renderText = useCallback((text: string) => {
-    const parts = text.split(/(\$[^$]+\$)/g)
-    return (
-      <>
-        {parts.map((part, idx) => {
-          if (part.startsWith('$') && part.endsWith('$')) {
-            return <MathBlock key={idx} math={part.slice(1, -1)} inline={true} />
-          }
-          return <span key={idx}>{part}</span>
-        })}
-      </>
-    )
-  }, [])
+  
 
   const isCorrect = selectedOption !== null && question && selectedOption === question.answerIndex
   const difficultyLabel = useMemo(() => {

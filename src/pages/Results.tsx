@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { FaCheck, FaTimes } from 'react-icons/fa'
-import MathBlock from '../components/MathBlock'
+import { renderText } from '../components/renderText'
 
 type Detail = {
   questionId: string
@@ -17,19 +17,7 @@ export default function Results() {
   const location = useLocation()
   const state = location.state as { score: number, total: number, details: Detail[] } | null
 
-  const renderText = (text: string) => {
-    const parts = text.split(/(\$[^$]+\$)/g)
-    return (
-      <>
-        {parts.map((part, idx) => {
-          if (part.startsWith('$') && part.endsWith('$')) {
-            return <MathBlock key={idx} math={part.slice(1, -1)} inline={true} />
-          }
-          return <span key={idx}>{part}</span>
-        })}
-      </>
-    )
-  }
+  
 
   if (!state) {
     return (
@@ -71,20 +59,20 @@ export default function Results() {
                   )}
                 </span>
               </div>
-              <div style={{ marginTop: 6 }}>{renderText(d.question.replace(/\\n/g, '\n'))}</div>
+              <div style={{ marginTop: 6 }}>{renderText(d.question)}</div>
               <ol style={{ marginTop: 6, paddingLeft: 18 }}>
                 {d.options.map((opt, i) => (
                   <li key={i} style={{
                     fontWeight: i === d.correctIndex ? 700 : 400,
                     color: i === d.correctIndex ? 'var(--accent)' : undefined
                   }}>
-                    {renderText(opt.replace(/\\n/g, '\n'))} {i === d.correctIndex ? '(answer)' : ''}
+                    {renderText(opt)} {i === d.correctIndex ? '(answer)' : ''}
                     {d.selectedIndex === i && i !== d.correctIndex ? ' — your choice' : ''}
                   </li>
                 ))}
               </ol>
               <div className="muted" style={{ marginTop: 6, backgroundColor: '#f8f9fa', padding: '8px 12px', borderRadius: 6 }}>
-                <strong>Explanation:</strong> {renderText(d.explanation.replace(/\\n/g, '\n'))}
+                <strong>Explanation:</strong> {renderText(d.explanation)}
               </div>
             </div>
           )

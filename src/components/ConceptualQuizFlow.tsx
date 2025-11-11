@@ -201,6 +201,10 @@ export default function ConceptualQuizFlow() {
   
   const recentQuestionIds = useRef<string[]>([])
   const timerIntervalRef = useRef<number | null>(null)
+  const conceptualTimerIntervalRef = useRef<number | null>(null)
+  const conceptualTimerStartRef = useRef<number | null>(null)
+  const conceptualToastIdRef = useRef<ReturnType<typeof toast> | string | number | null>(null)
+  const conceptualToastCountdownRef = useRef<number | null>(null)
   const wasTabHiddenRef = useRef(false)
   const fullscreenAttemptedRef = useRef(false)
   const isInitialMount = useRef(true)
@@ -271,17 +275,43 @@ export default function ConceptualQuizFlow() {
     async (rating: number) => {
       if (!currentConcept) return
       
+      // If any rating toast/countdown is active, dismiss and clear it before proceeding
+      if (conceptualToastIdRef.current) {
+        toast.dismiss(conceptualToastIdRef.current as string | number)
+        conceptualToastIdRef.current = null
+      }
+      if (conceptualToastCountdownRef.current) {
+        window.clearInterval(conceptualToastCountdownRef.current)
+        conceptualToastCountdownRef.current = null
+      }
+
       setUserRating(rating)
       setLoadingMessage('Finding a practice question for you...')
       setPhase('loading')
       setError(null)
 
       try {
-        const { question } = await fetchSingleQuestion(
-          currentConcept.topicId,
-          rating,
-          recentQuestionIds.current
-        )
+        // Retry up to 2 times to avoid transient failures falling back to conceptual phase
+        let question: QuizQuestion | null = null
+        let lastError: unknown = null
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const res = await fetchSingleQuestion(
+              currentConcept.topicId,
+              rating,
+              recentQuestionIds.current
+            )
+            question = res.question
+            break
+          } catch (e) {
+            lastError = e
+            // brief delay before retrying
+            await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 200 : 400))
+          }
+        }
+        if (!question) {
+          throw lastError ?? new Error('Unable to load a practice question.')
+        }
         setPracticeQuestion(question)
         recentQuestionIds.current.push(question.id)
         if (recentQuestionIds.current.length > 12) {
@@ -324,6 +354,20 @@ export default function ConceptualQuizFlow() {
       timerIntervalRef.current = null
     }
     setTimerStartTime(null)
+    // Clear conceptual timers and any toasts
+    if (conceptualTimerIntervalRef.current) {
+      clearInterval(conceptualTimerIntervalRef.current)
+      conceptualTimerIntervalRef.current = null
+    }
+    conceptualTimerStartRef.current = null
+    if (conceptualToastCountdownRef.current) {
+      window.clearInterval(conceptualToastCountdownRef.current)
+      conceptualToastCountdownRef.current = null
+    }
+    if (conceptualToastIdRef.current) {
+      toast.dismiss(conceptualToastIdRef.current as string | number)
+      conceptualToastIdRef.current = null
+    }
 
     if (isLastConcept) {
       // Completed all concepts - clear storage and exit fullscreen
@@ -342,6 +386,59 @@ export default function ConceptualQuizFlow() {
     setError(null)
     setTimer(60)
   }, [isLastConcept, navigate, clearLearningStorage, exitFullscreen])
+
+  // Show rating toast with 5-second countdown
+  const showRatingToast = useCallback(() => {
+    if (conceptualToastIdRef.current) return
+    let remaining = 5
+    const renderContent = () => (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontWeight: 700 }}>Time up. Rate your understanding in {remaining}s</div>
+        <div className="rating-row flashcard-rating-row" role="radiogroup" aria-label="Rate your understanding">
+          {RATING_VALUES.map(value => (
+            <button
+              key={value}
+              type="button"
+              className="rating-dot"
+              onClick={() => {
+                if (conceptualToastIdRef.current) toast.dismiss(conceptualToastIdRef.current as string | number)
+                conceptualToastIdRef.current = null
+                if (conceptualToastCountdownRef.current) {
+                  window.clearInterval(conceptualToastCountdownRef.current)
+                  conceptualToastCountdownRef.current = null
+                }
+                handleConceptRating(value)
+              }}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+    const id = toast.info(renderContent(), { autoClose: false, closeOnClick: false, draggable: false, position: 'top-center' })
+    conceptualToastIdRef.current = id
+    conceptualToastCountdownRef.current = window.setInterval(() => {
+      remaining -= 1
+      if (!conceptualToastIdRef.current) {
+        window.clearInterval(conceptualToastCountdownRef.current as number)
+        conceptualToastCountdownRef.current = null
+        return
+      }
+      if (remaining <= 0) {
+        toast.update(conceptualToastIdRef.current as string | number, {
+          render: 'Time up for rating.',
+          type: toast.TYPE.WARNING,
+          autoClose: 1500
+        })
+        window.clearInterval(conceptualToastCountdownRef.current as number)
+        conceptualToastCountdownRef.current = null
+        conceptualToastIdRef.current = null
+        return
+      }
+      toast.update(id as string | number, { render: renderContent() })
+    }, 1000)
+  }, [handleConceptRating])
 
   // Timer countdown effect
   useEffect(() => {
@@ -371,11 +468,57 @@ export default function ConceptualQuizFlow() {
     }
   }, [phase, timerStartTime])
 
+  // Conceptual phase 60s timer
+  useEffect(() => {
+    // Start or reset when entering conceptual phase
+    if (phase === 'conceptual') {
+      // clear practice timers
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current)
+        timerIntervalRef.current = null
+      }
+      setTimer(60)
+      conceptualTimerStartRef.current = Date.now()
+      if (conceptualTimerIntervalRef.current) {
+        clearInterval(conceptualTimerIntervalRef.current)
+      }
+      conceptualTimerIntervalRef.current = window.setInterval(() => {
+        if (!conceptualTimerStartRef.current) return
+        const elapsed = Math.floor((Date.now() - conceptualTimerStartRef.current) / 1000)
+        const remaining = Math.max(0, 60 - elapsed)
+        setTimer(remaining)
+        if (remaining <= 0) {
+          if (conceptualTimerIntervalRef.current) {
+            clearInterval(conceptualTimerIntervalRef.current)
+            conceptualTimerIntervalRef.current = null
+          }
+          conceptualTimerStartRef.current = null
+          // Show rating toast prompt
+          if (userRating === null) {
+            showRatingToast()
+          }
+        }
+      }, 1000)
+    }
+    return () => {
+      if (conceptualTimerIntervalRef.current) {
+        clearInterval(conceptualTimerIntervalRef.current)
+        conceptualTimerIntervalRef.current = null
+      }
+    }
+  }, [phase, currentIndex, showRatingToast, userRating])
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current)
+      }
+      if (conceptualTimerIntervalRef.current) {
+        clearInterval(conceptualTimerIntervalRef.current)
+      }
+      if (conceptualToastCountdownRef.current) {
+        window.clearInterval(conceptualToastCountdownRef.current)
       }
     }
   }, [])
@@ -545,7 +688,7 @@ export default function ConceptualQuizFlow() {
             </div>
           </div>
           <div className="quiz-header-panel">
-            {phase === 'practice' && (
+            {(phase === 'practice' || phase === 'conceptual') && (
               <div className="quiz-timer">
                 <span className="quiz-timer-label">Time Left</span>
                 <span className={`quiz-timer-value ${timerIsCritical ? 'danger' : ''}`}>{timer}s</span>

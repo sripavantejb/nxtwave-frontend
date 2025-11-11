@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { renderText } from './renderText'
 import type { Flashcard } from '../api/client'
 import { fetchFollowUpFlashcard, fetchRandomFlashcard } from '../api/client'
 
@@ -205,17 +206,17 @@ export default function FlashcardSpotlight() {
 
         {phase === 'flashcard' && flashcard && (
           <>
-            <p className="flashcard-question">{flashcard.question}</p>
+            <p className="flashcard-question">{renderText(flashcard.question)}</p>
 
-            <div className="flashcard-answer">
+              <div className="flashcard-answer">
               <span className="flashcard-answer-label">Answer</span>
-              <div className="flashcard-answer-content">{getAnswer(flashcard)}</div>
+                <div className="flashcard-answer-content">{renderText(getAnswer(flashcard))}</div>
             </div>
 
             {flashcard.explanation && (
               <div className="flashcard-explanation">
                 <span className="flashcard-answer-label">Why</span>
-                <div className="flashcard-answer-content">{flashcard.explanation}</div>
+                <div className="flashcard-answer-content">{renderText(flashcard.explanation)}</div>
               </div>
             )}
 
@@ -231,7 +232,7 @@ export default function FlashcardSpotlight() {
 
         {phase === 'followUp' && followUp && (
           <>
-            <p className="flashcard-question">{followUp.question}</p>
+            <p className="flashcard-question">{renderText(followUp.question)}</p>
 
             <button
               type="button"
@@ -244,11 +245,11 @@ export default function FlashcardSpotlight() {
             {showFollowUpAnswer && (
               <div className="flashcard-answer flashcard-answer-reveal">
                 <span className="flashcard-answer-label">Answer</span>
-                <div className="flashcard-answer-content">{getAnswer(followUp)}</div>
+                <div className="flashcard-answer-content">{renderText(getAnswer(followUp))}</div>
                 {followUp.explanation && (
                   <div className="flashcard-explanation">
                     <span className="flashcard-answer-label">Why</span>
-                    <div className="flashcard-answer-content">{followUp.explanation}</div>
+                    <div className="flashcard-answer-content">{renderText(followUp.explanation)}</div>
                   </div>
                 )}
               </div>
