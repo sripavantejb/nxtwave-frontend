@@ -1,4 +1,3 @@
-import React from 'react'
 import MathBlock from './MathBlock'
 
 export function renderText(text: string) {

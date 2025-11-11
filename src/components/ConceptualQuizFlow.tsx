@@ -428,7 +428,7 @@ export default function ConceptualQuizFlow() {
       if (remaining <= 0) {
         toast.update(conceptualToastIdRef.current as string | number, {
           render: 'Time up for rating.',
-          type: toast.TYPE.WARNING,
+          type: 'warning',
           autoClose: 1500
         })
         window.clearInterval(conceptualToastCountdownRef.current as number)
