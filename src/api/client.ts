@@ -26,18 +26,50 @@ export type Flashcard = {
   explanation: string
 }
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'https://nxtwave-backend-1.onrender.com'
+// Prefer explicit env, otherwise:
+// - Use local backend when running on localhost
+// - Fallback to the hosted backend
+function getBaseUrl(): string {
+  // Check for explicit environment variable first
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL
+  }
+  
+  // Check if we're running on localhost
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '') {
+      return 'http://localhost:4000'
+    }
+  }
+  
+  // Fallback to hosted backend
+  return 'https://nxtwave-backend-1.onrender.com'
+}
+
+const BASE_URL = getBaseUrl()
+
+// Log the base URL in development for debugging
+if (import.meta.env.DEV) {
+  console.log('API Base URL:', BASE_URL)
+}
 
 async function request<T>(path: string, params?: URLSearchParams): Promise<T> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 12000)
   try {
     const url = params ? `${BASE_URL}${path}?${params.toString()}` : `${BASE_URL}${path}`
+    
+    if (import.meta.env.DEV) {
+      console.log('Fetching:', url)
+    }
+    
     const res = await fetch(url, {
       mode: 'cors',
       cache: 'no-store',
       signal: controller.signal
     })
+    
     if (!res.ok) {
       const maybeJson = await res.json().catch(() => ({}))
       const message = (maybeJson as any).error || (maybeJson as any).message || `Request failed (${res.status})`
@@ -46,7 +78,12 @@ async function request<T>(path: string, params?: URLSearchParams): Promise<T> {
     return res.json() as Promise<T>
   } catch (err: unknown) {
     if ((err as Error).name === 'AbortError') {
-      throw new Error('Network timeout. Please try again.')
+      const errorMsg = `Network timeout. Please check if the backend is running at ${BASE_URL}`
+      console.error(errorMsg)
+      throw new Error(errorMsg)
+    }
+    if (import.meta.env.DEV) {
+      console.error('Request error:', err)
     }
     throw err as Error
   } finally {

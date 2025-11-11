@@ -20,13 +20,25 @@ export default function Rate() {
   useEffect(() => {
     fetchTopics()
       .then(topics => {
+        if (!topics || topics.length === 0) {
+          console.error('No topics returned from API')
+          setLoading(false)
+          return
+        }
         const found = topics.find(t => t.id === topicId)
-        if (found) setTopic(found)
+        if (found) {
+          setTopic(found)
+          // Start timer when topic is loaded
+          timerStartTimeRef.current = Date.now()
+        } else {
+          console.error(`Topic with id "${topicId}" not found. Available topics:`, topics.map(t => t.id))
+        }
         setLoading(false)
-        // Start timer when topic is loaded
-        timerStartTimeRef.current = Date.now()
       })
-      .catch(() => setLoading(false))
+      .catch((err) => {
+        console.error('Error fetching topics:', err)
+        setLoading(false)
+      })
   }, [topicId])
 
   // Main 60-second timer
@@ -97,7 +109,11 @@ export default function Rate() {
       <>
         {parts.map((part, idx) => {
           if (part.startsWith('$') && part.endsWith('$')) {
-            return <MathBlock key={idx} math={part.slice(1, -1)} inline={true} />
+            // Prevent KaTeX warnings by avoiding unsupported ₹ inside math
+            const sanitized = part
+              .slice(1, -1)
+              .replace(/₹/g, 'Rs.')
+            return <MathBlock key={idx} math={sanitized} inline={true} />
           }
           return <span key={idx}>{part}</span>
         })}
@@ -106,7 +122,33 @@ export default function Rate() {
   }
 
   if (loading) return <Loader message="Loading topic..." />
-  if (!topic) return <p className="muted" style={{ padding: 24 }}>Topic not found.</p>
+  if (!topic) {
+    return (
+      <div style={{ padding: 24, maxWidth: 800, margin: '0 auto' }}>
+        <div className="card card-accent" style={{ textAlign: 'center' }}>
+          <h2 style={{ color: 'var(--accent)', marginBottom: 16 }}>Topic not found</h2>
+          <p className="muted" style={{ marginBottom: 16 }}>
+            The topic "{topicId}" could not be found. This might be because:
+          </p>
+          <ul style={{ textAlign: 'left', display: 'inline-block', marginBottom: 16 }}>
+            <li>The backend server is not running</li>
+            <li>The topic ID is incorrect</li>
+            <li>There was a network error</li>
+          </ul>
+          <p className="muted" style={{ fontSize: '14px', marginTop: 16 }}>
+            Please check the browser console for more details.
+          </p>
+          <button 
+            className="btn btn-primary" 
+            onClick={() => window.location.href = '/'}
+            style={{ marginTop: 16 }}
+          >
+            Go to Home
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ padding: 24, maxWidth: 800, margin: '0 auto' }}>

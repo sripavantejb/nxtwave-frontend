@@ -483,7 +483,12 @@ export default function Quiz() {
       <>
         {parts.map((part, idx) => {
           if (part.startsWith('$') && part.endsWith('$')) {
-            return <MathBlock key={idx} math={part.slice(1, -1)} inline={true} />
+            // KaTeX doesn't support the Unicode Rupee symbol.
+            // Replace it inside LaTeX segments to prevent console warnings.
+            const sanitized = part
+              .slice(1, -1)
+              .replace(/₹/g, 'Rs.') // plain text fallback
+            return <MathBlock key={idx} math={sanitized} inline={true} />
           }
           return <span key={idx} style={{ whiteSpace: 'pre-wrap' }}>{part}</span>
         })}
