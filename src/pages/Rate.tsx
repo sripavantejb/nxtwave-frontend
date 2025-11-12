@@ -11,6 +11,7 @@ export default function Rate() {
   const [selected, setSelected] = useState<number | null>(null)
   const [topic, setTopic] = useState<Topic | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [timer, setTimer] = useState(60)
   const [warningCountdown, setWarningCountdown] = useState(5)
   const [showWarning, setShowWarning] = useState(false)
@@ -18,10 +19,13 @@ export default function Rate() {
   const timerStartTimeRef = useRef<number | null>(null)
 
   useEffect(() => {
+    setLoading(true)
+    setError(null)
     fetchTopics()
       .then(topics => {
         if (!topics || topics.length === 0) {
           console.error('No topics returned from API')
+          setError('No topics available. The backend may be starting up. Please try again in a moment.')
           setLoading(false)
           return
         }
@@ -32,17 +36,24 @@ export default function Rate() {
         }
         if (found) {
           setTopic(found)
+          setError(null)
           // Start timer when topic is loaded
           timerStartTimeRef.current = Date.now()
         } else {
           console.error(`Topic with id "${topicId}" not found. Available topics:`, topics.map(t => t.id))
+          setError(`Topic "${topicId}" not found. Available topics: ${topics.map(t => t.id).join(', ')}`)
         }
         setLoading(false)
       })
       .catch((err) => {
         console.error('Error fetching topics:', err)
+        const errorMessage = err.message || 'Unknown error'
+        if (errorMessage.includes('timeout') || errorMessage.includes('Network')) {
+          setError('Network timeout. The backend server may be starting up (this can take 10-30 seconds on Render). Please wait a moment and refresh the page.')
+        } else {
+          setError(`Failed to fetch topics: ${errorMessage}`)
+        }
         setLoading(false)
-        // Don't set topic to null here - let the error UI handle it
       })
   }, [topicId])
 
@@ -127,29 +138,64 @@ export default function Rate() {
   }
 
   if (loading) return <Loader message="Loading topic..." />
-  if (!topic) {
+  if (!topic || error) {
     return (
       <div style={{ padding: 24, maxWidth: 800, margin: '0 auto' }}>
         <div className="card card-accent" style={{ textAlign: 'center' }}>
-          <h2 style={{ color: 'var(--accent)', marginBottom: 16 }}>Topic not found</h2>
-          <p className="muted" style={{ marginBottom: 16 }}>
-            The topic "{topicId}" could not be found. This might be because:
-          </p>
-          <ul style={{ textAlign: 'left', display: 'inline-block', marginBottom: 16 }}>
-            <li>The backend server is not running</li>
-            <li>The topic ID is incorrect</li>
-            <li>There was a network error</li>
-          </ul>
+          <h2 style={{ color: 'var(--accent)', marginBottom: 16 }}>
+            {error && error.includes('timeout') ? 'Connection Timeout' : 'Topic not found'}
+          </h2>
+          {error ? (
+            <>
+              <p className="muted" style={{ marginBottom: 16, textAlign: 'left', whiteSpace: 'pre-wrap' }}>
+                {error}
+              </p>
+              {error.includes('timeout') && (
+                <div style={{ 
+                  padding: '12px 16px', 
+                  backgroundColor: '#fff3cd', 
+                  border: '1px solid #ffc107',
+                  borderRadius: 6,
+                  marginBottom: 16,
+                  textAlign: 'left'
+                }}>
+                  <p style={{ margin: 0, fontSize: '14px', color: '#856404' }}>
+                    <strong>💡 Tip:</strong> Render free tier services can take 10-30 seconds to start if they've been idle. 
+                    Try refreshing the page in a few moments.
+                  </p>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="muted" style={{ marginBottom: 16 }}>
+                The topic "{topicId}" could not be found. This might be because:
+              </p>
+              <ul style={{ textAlign: 'left', display: 'inline-block', marginBottom: 16 }}>
+                <li>The backend server is not running</li>
+                <li>The topic ID is incorrect</li>
+                <li>There was a network error</li>
+              </ul>
+            </>
+          )}
           <p className="muted" style={{ fontSize: '14px', marginTop: 16 }}>
             Please check the browser console for more details.
           </p>
-          <button 
-            className="btn btn-primary" 
-            onClick={() => window.location.href = '/'}
-            style={{ marginTop: 16 }}
-          >
-            Go to Home
-          </button>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 16 }}>
+            <button 
+              className="btn btn-primary" 
+              onClick={() => window.location.reload()}
+            >
+              Retry
+            </button>
+            <button 
+              className="btn" 
+              onClick={() => window.location.href = '/'}
+              style={{ backgroundColor: '#f8f9fa', color: '#333' }}
+            >
+              Go to Home
+            </button>
+          </div>
         </div>
       </div>
     )

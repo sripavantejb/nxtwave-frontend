@@ -26,25 +26,15 @@ export type Flashcard = {
   explanation: string
 }
 
-// Prefer explicit env, otherwise:
-// - Use local backend when running on localhost
-// - Fallback to the hosted backend
+// Prefer explicit env, otherwise use the hosted backend
 function getBaseUrl(): string {
   // Check for explicit environment variable first
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL
   }
   
-  // Check if we're running on localhost
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '') {
-      return 'http://localhost:4000'
-    }
-  }
-  
-  // Fallback to hosted backend
-  return 'https://nxtwave-backend-1.onrender.com'
+  // Always use the hosted backend
+  return 'https://nxtwave-backend-p4cf.onrender.com'
 }
 
 const BASE_URL = getBaseUrl()
@@ -56,7 +46,8 @@ if (import.meta.env.DEV) {
 
 async function request<T>(path: string, params?: URLSearchParams): Promise<T> {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 2000)
+  // Increased timeout for Render backend which may have cold starts (10-30 seconds)
+  const timeoutId = setTimeout(() => controller.abort(), 20000)
   try {
     const url = params ? `${BASE_URL}${path}?${params.toString()}` : `${BASE_URL}${path}`
     

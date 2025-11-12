@@ -4,16 +4,23 @@ export function renderText(text: string) {
   if (!text) return null
   
   // Normalize escaped newlines from API (e.g., "\\n") to actual newlines
-  const normalized = text.replace(/\\n/g, '\n')
+  let normalized = text.replace(/\\n/g, '\n')
   
-  // Split by newlines first to handle line breaks
+  // First, remove \n characters from inside LaTeX blocks (between $ markers)
+  // This must be done BEFORE splitting by newlines to preserve LaTeX blocks
+  normalized = normalized.replace(/\$([^$]*)\$/g, (_match, latexContent) => {
+    // Remove all newlines from LaTeX content and replace with spaces
+    const cleanedLatex = latexContent.replace(/\n/g, ' ')
+    return `$${cleanedLatex}$`
+  })
+  
+  // Now split by newlines for regular text formatting
   const lines = normalized.split('\n')
   
   return (
     <>
       {lines.map((line, lineIdx) => {
-        // Process each line for math blocks - match $...$ patterns (including nested content)
-        // Use a more robust regex that handles edge cases
+        // Process each line for math blocks - match $...$ patterns
         const parts = line.split(/(\$[^$]*\$)/g).filter(part => part !== '')
         
         return (
@@ -22,7 +29,9 @@ export function renderText(text: string) {
               const uniqueKey = `line-${lineIdx}-part-${partIdx}`
               // Check if this part is a LaTeX expression (starts and ends with $)
               if (part.startsWith('$') && part.endsWith('$') && part.length > 2) {
-                const mathContent = part.slice(1, -1).trim()
+                // KaTeX doesn't support the Unicode Rupee symbol.
+                // Replace it inside LaTeX segments to prevent console warnings.
+                const mathContent = part.slice(1, -1).trim().replace(/₹/g, 'Rs.')
                 // Only render as math if there's actual content
                 if (mathContent) {
                   return <MathBlock key={uniqueKey} math={mathContent} inline={true} />

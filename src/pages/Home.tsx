@@ -1,22 +1,54 @@
+import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { FaChartBar, FaArrowRight, FaGraduationCap, FaLightbulb, FaChartLine, FaTrophy } from 'react-icons/fa'
+import { FaChartBar, FaArrowRight, FaGraduationCap, FaLightbulb, FaChartLine, FaTrophy, FaBook } from 'react-icons/fa'
 import { BsCurrencyDollar } from 'react-icons/bs'
+import { fetchTopics } from '../api/client'
+import type { Topic } from '../api/client'
+import Loader from '../components/Loader'
+
+// Icon mapping for topics
+const topicIconMap: Record<string, React.ComponentType> = {
+  'profit-loss': FaChartBar,
+  'si-ci': BsCurrencyDollar,
+  'si': BsCurrencyDollar,
+  'ci': BsCurrencyDollar,
+}
+
+// Default icon fallback
+const DefaultIcon = FaBook
+
+// Safe icon renderer component
+function SafeIcon({ icon, topicId }: { icon?: React.ComponentType, topicId: string }) {
+  const IconComponent = icon || topicIconMap[topicId] || DefaultIcon
+  if (!IconComponent || typeof IconComponent !== 'function') {
+    return <DefaultIcon />
+  }
+  return <IconComponent />
+}
 
 export default function Home() {
-  const topics = [
-    {
-      id: 'profit-loss',
-      name: 'Profit and Loss',
-      description: 'Master the fundamentals of profit, loss, cost price, selling price, and percentage calculations.',
-      icon: FaChartBar
-    },
-    {
-      id: 'si-ci',
-      name: 'Simple Interest & Compound Interest',
-      description: 'Master Simple Interest and Compound Interest calculations. Learn formulas, solve real-world problems, and understand the key differences.',
-      icon: BsCurrencyDollar
-    }
-  ]
+  const [topics, setTopics] = useState<(Topic & { icon?: React.ComponentType })[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchTopics()
+      .then((fetchedTopics) => {
+        if (fetchedTopics && Array.isArray(fetchedTopics) && fetchedTopics.length > 0) {
+          setTopics(fetchedTopics)
+        } else {
+          setTopics([])
+        }
+        setLoading(false)
+      })
+      .catch((err) => {
+        console.error('Error fetching topics:', err)
+        setError(err.message || 'Failed to load topics')
+        setLoading(false)
+        // Set empty array on error to show fallback message
+        setTopics([])
+      })
+  }, [])
 
   return (
     <div style={{ paddingBottom: 48 }}>
@@ -137,23 +169,32 @@ export default function Home() {
         </div>
 
         <div className="grid" style={{ marginTop: 32 }}>
-        {topics.map((topic) => {
-          const IconComponent = topic.icon
+        {loading ? (
+          <div className="col-12" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', padding: '40px' }}>
+            <Loader />
+          </div>
+        ) : error ? (
+          <div className="col-12" style={{ textAlign: 'center', padding: '40px' }}>
+            <p style={{ color: 'var(--accent)', fontSize: '16px', marginBottom: '12px' }}>Error loading topics</p>
+            <p style={{ color: 'var(--muted)', fontSize: '14px' }}>{error}</p>
+          </div>
+        ) : topics && topics.length > 0 ? topics.map((topic) => {
+          if (!topic || !topic.id) return null
           return (
             <div key={topic.id} className="col-6">
               <Link to={`/rate/${topic.id}`} style={{ textDecoration: 'none', width: '100%', display: 'flex' }}>
                 <div className="card card-accent">
                   <div className="topic-icon">
-                    <IconComponent />
+                    <SafeIcon icon={topic.icon} topicId={topic.id} />
                   </div>
-                  <h2 className="card-title">{topic.name}</h2>
+                  <h2 className="card-title">{topic.name || 'Untitled Topic'}</h2>
                   <p className="muted" style={{ 
                     marginBottom: 20, 
                     lineHeight: 1.7, 
                     flexGrow: 1,
                     fontSize: '15px'
                   }}>
-                    {topic.description}
+                    {topic.description || 'No description available.'}
                   </p>
                   <div className="btn" style={{ alignSelf: 'flex-start' }}>
                     Start Quiz <FaArrowRight style={{ marginLeft: 8, fontSize: '14px' }} />
@@ -162,7 +203,11 @@ export default function Home() {
               </Link>
             </div>
           )
-        })}
+        }) : (
+          <div className="col-12" style={{ textAlign: 'center', padding: '40px' }}>
+            <p style={{ color: 'var(--muted)', fontSize: '16px' }}>No topics available at the moment.</p>
+          </div>
+        )}
         </div>
       </section>
 

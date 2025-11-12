@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import { fetchQuiz } from '../api/client'
 import type { QuizQuestion } from '../api/client'
-import MathBlock from '../components/MathBlock'
+import { renderText } from '../components/renderText'
 import Loader from '../components/Loader'
 
 // Fullscreen API type extensions
@@ -473,47 +473,6 @@ export default function Quiz() {
   if (loading) return <Loader message="Loading your quiz..." />
   if (error) return <p className="muted" style={{ padding: 24 }}>Error: {error}</p>
   if (!current) return <p className="muted" style={{ padding: 24 }}>No questions available.</p>
-
-  const renderText = (text: string) => {
-    if (!text) return null
-    
-    // Normalize escaped newlines from API (e.g., "\\n") to actual newlines
-    const normalized = text.replace(/\\n/g, '\n')
-    
-    // Split by newlines first to handle line breaks
-    const lines = normalized.split('\n')
-    
-    return (
-      <>
-        {lines.map((line, lineIdx) => {
-          // Process each line for math blocks - match $...$ patterns (including nested content)
-          // Use a more robust regex that handles edge cases
-          const parts = line.split(/(\$[^$]*\$)/g).filter(part => part !== '')
-          
-          return (
-            <span key={`line-${lineIdx}`} style={{ whiteSpace: 'pre-wrap' }}>
-              {parts.map((part, partIdx) => {
-                const uniqueKey = `line-${lineIdx}-part-${partIdx}`
-                // Check if this part is a LaTeX expression (starts and ends with $)
-                if (part.startsWith('$') && part.endsWith('$') && part.length > 2) {
-                  // KaTeX doesn't support the Unicode Rupee symbol.
-                  // Replace it inside LaTeX segments to prevent console warnings.
-                  const mathContent = part.slice(1, -1).trim().replace(/₹/g, 'Rs.')
-                  // Only render as math if there's actual content
-                  if (mathContent) {
-                    return <MathBlock key={uniqueKey} math={mathContent} inline={true} />
-                  }
-                }
-                // Render as regular text (preserves all text content)
-                return <span key={uniqueKey}>{part}</span>
-              })}
-              {lineIdx < lines.length - 1 && <br key={`br-${lineIdx}`} />}
-            </span>
-          )
-        })}
-      </>
-    )
-  }
 
   return (
     <>

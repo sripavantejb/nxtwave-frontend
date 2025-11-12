@@ -402,12 +402,19 @@ a {
   grid-column: span 12;
   display: flex;
 }
+.col-12 {
+  grid-column: span 12;
+  display: flex;
+}
 @media (min-width: 768px) {
   .col-4 {
     grid-column: span 4;
   }
   .col-6 {
     grid-column: span 6;
+  }
+  .col-12 {
+    grid-column: span 12;
   }
 }
 
