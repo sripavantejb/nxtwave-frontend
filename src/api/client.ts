@@ -39,9 +39,9 @@ function getBaseUrl(): string {
     return import.meta.env.VITE_API_URL
   }
   
-  // In development, default to local backend server
+  // In development, default to hosted backend server
   if (import.meta.env.DEV) {
-    return 'http://localhost:4000'
+    return 'https://nxtwave-backend-p4cf.onrender.com'
   }
   
   // In production, use relative URLs (same origin)
