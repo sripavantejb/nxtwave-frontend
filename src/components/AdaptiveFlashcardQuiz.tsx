@@ -141,16 +141,24 @@ export default function AdaptiveFlashcardQuiz() {
           flashcard.topicId,
           rating,
           recentQuestionIds.current,
-          flashcard.subTopic
+          flashcard.subTopic,
+          flashcard.id // Pass flashcard questionId to match questions to this specific flashcard
         )
         setQuestion(fetchedQuestion)
         rememberQuestionId(fetchedQuestion.id)
         setSelectedOption(null)
         setPhase('question')
-      } catch (err) {
+      } catch (err: any) {
         console.error(err)
-        setError('Unable to load a question. Loading a new flashcard instead.')
-        await loadRandomFlashcard('Loading a new flashcard...')
+        // Check if it's a "Requested Question Not Found" error
+        const errorMessage = err?.response?.data?.error || err?.message || ''
+        if (errorMessage.includes('Requested Question Not Found')) {
+          setError('Requested Question Not Found. No questions available for this difficulty level in this subtopic. Please try a different rating or load a new flashcard.')
+          setPhase('error')
+        } else {
+          setError('Unable to load a question. Loading a new flashcard instead.')
+          await loadRandomFlashcard('Loading a new flashcard...')
+        }
       }
     },
     [flashcard, loadRandomFlashcard, recentQuestionIds, rememberQuestionId]
@@ -236,9 +244,23 @@ export default function AdaptiveFlashcardQuiz() {
         {phase === 'error' && (
           <div className="flashcard-loading">
             <p className="flashcard-error">{error ?? 'Something went wrong.'}</p>
-            <button className="btn btn-primary" type="button" onClick={() => loadRandomFlashcard()}>
-              Try Again
-            </button>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '16px' }}>
+              {error?.includes('Requested Question Not Found') && flashcard && (
+                <button 
+                  className="btn btn-ghost" 
+                  type="button" 
+                  onClick={() => {
+                    setError(null)
+                    setPhase('flashcard')
+                  }}
+                >
+                  Try Different Rating
+                </button>
+              )}
+              <button className="btn btn-primary" type="button" onClick={() => loadRandomFlashcard()}>
+                {error?.includes('Requested Question Not Found') ? 'Load New Flashcard' : 'Try Again'}
+              </button>
+            </div>
           </div>
         )}
 

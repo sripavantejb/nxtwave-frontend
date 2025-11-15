@@ -39,8 +39,13 @@ function getBaseUrl(): string {
     return import.meta.env.VITE_API_URL
   }
   
-  // Always use the hosted backend
-  return 
+  // In development, default to local backend server
+  if (import.meta.env.DEV) {
+    return 'http://localhost:4000'
+  }
+  
+  // In production, use relative URLs (same origin)
+  return ''
 }
 
 const BASE_URL = getBaseUrl()
@@ -91,7 +96,10 @@ async function request<T>(
     if (!res.ok) {
       const maybeJson = await res.json().catch(() => ({}))
       const message = (maybeJson as any).error || (maybeJson as any).message || `Request failed (${res.status})`
-      throw new Error(message)
+      const error = new Error(message) as Error & { requiresSession?: boolean; status?: number }
+      error.requiresSession = (maybeJson as any).requiresSession || false
+      error.status = res.status
+      throw error
     }
     return res.json() as Promise<T>
   } catch (err: unknown) {
@@ -149,13 +157,15 @@ export async function fetchSingleQuestion(
   topicId: string,
   rating: number,
   excludeIds: string[] = [],
-  subTopic?: string
+  subTopic?: string,
+  flashcardQuestionId?: string
 ): Promise<{ question: QuizQuestion }> {
   const params = new URLSearchParams()
   params.set('topicId', topicId)
   params.set('rating', String(rating))
   if (excludeIds.length > 0) params.set('excludeIds', excludeIds.join(','))
   if (subTopic) params.set('subTopic', subTopic)
+  if (flashcardQuestionId) params.set('flashcardQuestionId', flashcardQuestionId)
   return request<{ question: QuizQuestion }>('/api/question', params)
 }
 
@@ -204,9 +214,10 @@ export type DueReview = {
 
 /**
  * Fetch random flashcard (works for authenticated and non-authenticated users)
+ * Returns either FlashcardData or an object with allCompleted flag
  */
-export async function fetchRandomFlashcardJson(token?: string): Promise<FlashcardData> {
-  return request<FlashcardData>('/api/flashcards/random-json', undefined, { token })
+export async function fetchRandomFlashcardJson(token?: string): Promise<FlashcardData | { allCompleted: true; message: string; sessionSubtopics: string[] }> {
+  return request<FlashcardData | { allCompleted: true; message: string; sessionSubtopics: string[] }>('/api/flashcards/random-json', undefined, { token })
 }
 
 /**
@@ -235,10 +246,12 @@ export async function fetchFollowUpQuestion(
   topic: string,
   difficulty: string,
   subTopic?: string,
-  token?: string
+  token?: string,
+  flashcardQuestionId?: string
 ): Promise<FollowUpQuestion> {
   const params = new URLSearchParams()
   if (subTopic) params.set('subTopic', subTopic)
+  if (flashcardQuestionId) params.set('flashcardQuestionId', flashcardQuestionId)
   return request<FollowUpQuestion>(
     `/api/flashcards/question/followup/${topic}/${difficulty}`,
     params,
@@ -252,14 +265,21 @@ export async function fetchFollowUpQuestion(
 export async function submitFlashcardAnswer(
   questionId: string,
   selectedOption: string,
-  token: string
+  token: string,
+  flashcardQuestionId?: string,
+  flashcardSubTopic?: string
 ): Promise<SubmitResult> {
   return request<SubmitResult>(
     '/api/flashcards/question/submit',
     undefined,
     {
       method: 'POST',
-      body: JSON.stringify({ questionId, selectedOption }),
+      body: JSON.stringify({ 
+        questionId, 
+        selectedOption,
+        ...(flashcardQuestionId && { flashcardQuestionId }),
+        ...(flashcardSubTopic && { flashcardSubTopic })
+      }),
       token
     }
   )
@@ -304,6 +324,104 @@ export type Concept = {
 
 export async function fetchConcepts(): Promise<{ concepts: Concept[] }> {
   return request<{ concepts: Concept[] }>('/api/flashcards/concepts')
+}
+
+/**
+ * Start a new flashcard session with 6 random subtopics
+ * Requires JWT authentication
+ */
+export type SessionResponse = {
+  sessionSubtopics: string[]
+  isNewSession: boolean
+}
+
+export async function startFlashcardSession(token: string, forceNew: boolean = false): Promise<SessionResponse> {
+  const params = new URLSearchParams()
+  if (forceNew) {
+    params.set('force', 'true')
+  }
+  return request<SessionResponse>(
+    '/api/flashcards/start-session',
+    params,
+    { token }
+  )
+}
+
+/**
+ * Get current session subtopics
+ * Requires JWT authentication
+ */
+export async function getSessionSubtopics(token: string): Promise<string[]> {
+  const response = await startFlashcardSession(token)
+  return response.sessionSubtopics
+}
+
+// ============== Authentication API Functions ==============
+
+export type User = {
+  userId: string
+  name: string
+  email: string
+}
+
+export type AuthResponse = {
+  token: string
+  user: User
+}
+
+export type ProfileResponse = {
+  userId: string
+  name: string
+  email: string
+  createdAt: string
+}
+
+/**
+ * Register a new user
+ */
+export async function register(name: string, email: string, password: string): Promise<AuthResponse> {
+  return request<AuthResponse>(
+    '/api/auth/register',
+    undefined,
+    {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password })
+    }
+  )
+}
+
+/**
+ * Login user
+ */
+export async function login(email: string, password: string): Promise<AuthResponse> {
+  return request<AuthResponse>(
+    '/api/auth/login',
+    undefined,
+    {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    }
+  )
+}
+
+/**
+ * Get current user profile (requires JWT)
+ */
+export async function getProfile(token: string): Promise<ProfileResponse> {
+  return request<ProfileResponse>(
+    '/api/auth/me',
+    undefined,
+    { token }
+  )
+}
+
+/**
+ * Logout helper - clears auth token from localStorage
+ */
+export function logout(): void {
+  localStorage.removeItem('authToken')
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
 }
 
 

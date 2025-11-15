@@ -11,6 +11,89 @@ export default function Home() {
         <p>Rate yourself and take a 6-question adaptive quiz.</p>
       </div>
 
+      {/* Flashcard Learning Section */}
+      <section id="flashcard-learning" style={{ marginTop: 48, marginBottom: 48, scrollMarginTop: '90px' }}>
+        <div style={{
+          background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+          padding: '48px 40px',
+          borderRadius: '20px',
+          border: '2px solid rgba(153,27,27,0.1)',
+          boxShadow: '0 10px 40px rgba(0,0,0,0.05)'
+        }}>
+          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+            <h2 style={{
+              fontSize: '32px',
+              fontWeight: 800,
+              marginBottom: '12px',
+              color: 'var(--text)',
+              letterSpacing: '-0.02em'
+            }}>
+              🎯 Adaptive Flashcard Learning
+            </h2>
+            <p style={{
+              fontSize: '16px',
+              color: 'var(--text-light)',
+              maxWidth: '700px',
+              margin: '0 auto',
+              lineHeight: 1.6
+            }}>
+              Master concepts with our intelligent flashcard system featuring spaced repetition and adaptive follow-up questions
+            </p>
+          </div>
+
+          <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+            <FlashcardSystem />
+          </div>
+
+          <div style={{ marginTop: '32px', textAlign: 'center' }}>
+            <div style={{
+              display: 'inline-grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '16px',
+              maxWidth: '800px',
+              width: '100%'
+            }}>
+              <div style={{
+                background: 'rgba(153,27,27,0.05)',
+                padding: '16px',
+                borderRadius: '12px',
+                border: '1px solid rgba(153,27,27,0.1)'
+              }}>
+                <div style={{ fontSize: '24px', marginBottom: '8px' }}>⏱️</div>
+                <div style={{ fontWeight: 600, fontSize: '14px' }}>30-Second Timer</div>
+              </div>
+              <div style={{
+                background: 'rgba(153,27,27,0.05)',
+                padding: '16px',
+                borderRadius: '12px',
+                border: '1px solid rgba(153,27,27,0.1)'
+              }}>
+                <div style={{ fontSize: '24px', marginBottom: '8px' }}>⭐</div>
+                <div style={{ fontWeight: 600, fontSize: '14px' }}>Self-Rating System</div>
+              </div>
+              <div style={{
+                background: 'rgba(153,27,27,0.05)',
+                padding: '16px',
+                borderRadius: '12px',
+                border: '1px solid rgba(153,27,27,0.1)'
+              }}>
+                <div style={{ fontSize: '24px', marginBottom: '8px' }}>🎲</div>
+                <div style={{ fontWeight: 600, fontSize: '14px' }}>Adaptive Questions</div>
+              </div>
+              <div style={{
+                background: 'rgba(153,27,27,0.05)',
+                padding: '16px',
+                borderRadius: '12px',
+                border: '1px solid rgba(153,27,27,0.1)'
+              }}>
+                <div style={{ fontSize: '24px', marginBottom: '8px' }}>📅</div>
+                <div style={{ fontWeight: 600, fontSize: '14px' }}>Spaced Repetition</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Conceptual Learning Path Section */}
       <section id="learn-concepts" style={{ marginTop: 48, marginBottom: 48, scrollMarginTop: '90px' }}>
         <Link to="/conceptual-guidelines" style={{ textDecoration: 'none', display: 'block' }}>
@@ -301,89 +384,6 @@ export default function Home() {
             our platform adjusts to your level and helps you progress at your own pace. Start your journey 
             today and discover a smarter way to learn mathematics.
           </p>
-        </div>
-      </section>
-
-      {/* Flashcard Learning Section */}
-      <section id="flashcard-learning" style={{ marginTop: 48, marginBottom: 48, scrollMarginTop: '90px' }}>
-        <div style={{
-          background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
-          padding: '48px 40px',
-          borderRadius: '20px',
-          border: '2px solid rgba(153,27,27,0.1)',
-          boxShadow: '0 10px 40px rgba(0,0,0,0.05)'
-        }}>
-          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <h2 style={{
-              fontSize: '32px',
-              fontWeight: 800,
-              marginBottom: '12px',
-              color: 'var(--text)',
-              letterSpacing: '-0.02em'
-            }}>
-              🎯 Adaptive Flashcard Learning
-            </h2>
-            <p style={{
-              fontSize: '16px',
-              color: 'var(--text-light)',
-              maxWidth: '700px',
-              margin: '0 auto',
-              lineHeight: 1.6
-            }}>
-              Master concepts with our intelligent flashcard system featuring spaced repetition and adaptive follow-up questions
-            </p>
-          </div>
-
-          <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-            <FlashcardSystem />
-          </div>
-
-          <div style={{ marginTop: '32px', textAlign: 'center' }}>
-            <div style={{
-              display: 'inline-grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: '16px',
-              maxWidth: '800px',
-              width: '100%'
-            }}>
-              <div style={{
-                background: 'rgba(153,27,27,0.05)',
-                padding: '16px',
-                borderRadius: '12px',
-                border: '1px solid rgba(153,27,27,0.1)'
-              }}>
-                <div style={{ fontSize: '24px', marginBottom: '8px' }}>⏱️</div>
-                <div style={{ fontWeight: 600, fontSize: '14px' }}>30-Second Timer</div>
-              </div>
-              <div style={{
-                background: 'rgba(153,27,27,0.05)',
-                padding: '16px',
-                borderRadius: '12px',
-                border: '1px solid rgba(153,27,27,0.1)'
-              }}>
-                <div style={{ fontSize: '24px', marginBottom: '8px' }}>⭐</div>
-                <div style={{ fontWeight: 600, fontSize: '14px' }}>Self-Rating System</div>
-              </div>
-              <div style={{
-                background: 'rgba(153,27,27,0.05)',
-                padding: '16px',
-                borderRadius: '12px',
-                border: '1px solid rgba(153,27,27,0.1)'
-              }}>
-                <div style={{ fontSize: '24px', marginBottom: '8px' }}>🎲</div>
-                <div style={{ fontWeight: 600, fontSize: '14px' }}>Adaptive Questions</div>
-              </div>
-              <div style={{
-                background: 'rgba(153,27,27,0.05)',
-                padding: '16px',
-                borderRadius: '12px',
-                border: '1px solid rgba(153,27,27,0.1)'
-              }}>
-                <div style={{ fontSize: '24px', marginBottom: '8px' }}>📅</div>
-                <div style={{ fontWeight: 600, fontSize: '14px' }}>Spaced Repetition</div>
-              </div>
-            </div>
-          </div>
         </div>
       </section>
     </div>

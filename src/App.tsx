@@ -9,7 +9,10 @@ import Guidelines from './pages/Guidelines'
 import ConceptualGuidelines from './pages/ConceptualGuidelines'
 import Quiz from './pages/Quiz'
 import Results from './pages/Results'
+import Login from './pages/Login'
+import Register from './pages/Register'
 import ConceptualQuizFlow from './components/ConceptualQuizFlow'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 import 'katex/dist/katex.min.css'
 import 'react-toastify/dist/ReactToastify.css'
 import './App.css'
@@ -21,6 +24,7 @@ function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const location = useLocation()
   const isHomePage = location.pathname === '/'
+  const { isAuthenticated, user, logout } = useAuth()
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen)
@@ -114,20 +118,25 @@ function Navbar() {
               About
             </Link>
           )}
-          {isHomePage ? (
-            <a 
-              className="nav-link nav-cta" 
-              href="#learn-concepts"
-              onClick={(e) => {
-                e.preventDefault()
-                scrollToSection('learn-concepts')
-              }}
-            >
-              Get Started
-            </a>
+          {isAuthenticated ? (
+            <>
+              <span className="nav-link" style={{ color: 'var(--text)', cursor: 'default' }}>
+                {user?.name || 'User'}
+              </span>
+              <button
+                className="nav-link nav-cta"
+                onClick={() => {
+                  logout()
+                  closeMenu()
+                }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                Logout
+              </button>
+            </>
           ) : (
-            <Link className="nav-link nav-cta" to="/" onClick={closeMenu}>
-              Get Started
+            <Link className="nav-link nav-cta" to="/login" onClick={closeMenu}>
+              Login
             </Link>
           )}
         </div>
@@ -191,6 +200,8 @@ function AppRoutes() {
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={<PageTransition><Home /></PageTransition>} />
         <Route path="/about" element={<PageTransition><About /></PageTransition>} />
+        <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
+        <Route path="/register" element={<PageTransition><Register /></PageTransition>} />
         <Route path="/rate/:topicId" element={<PageTransition><Rate /></PageTransition>} />
         <Route path="/guidelines/:topicId/:rating" element={<PageTransition><Guidelines /></PageTransition>} />
         <Route path="/conceptual-guidelines" element={<PageTransition><ConceptualGuidelines /></PageTransition>} />
@@ -203,13 +214,13 @@ function AppRoutes() {
   )
 }
 
-export default function App() {
+function AppContent() {
   useEffect(() => {
     // Pre-warm backend on first load (Render cold start)
     pingHealth()
   }, [])
   return (
-    <BrowserRouter>
+    <>
       <Navbar />
       <div className="main-content">
         <div className="container">
@@ -229,6 +240,16 @@ export default function App() {
         pauseOnHover
         theme="light"
       />
+    </>
+  )
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
     </BrowserRouter>
   )
 }

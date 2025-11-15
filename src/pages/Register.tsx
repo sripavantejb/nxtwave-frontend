@@ -1,17 +1,20 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { FaUser, FaLock, FaEye, FaEyeSlash } from 'react-icons/fa'
+import { FaUser, FaLock, FaEye, FaEyeSlash, FaEnvelope } from 'react-icons/fa'
 import { useAuth } from '../contexts/AuthContext'
 
-export default function Login() {
+export default function Register() {
+  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
-  const { login } = useAuth()
+  const { register } = useAuth()
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -19,8 +22,14 @@ export default function Login() {
     setLoading(true)
 
     // Validate inputs
-    if (!email || !password) {
-      setError('Please enter both email and password')
+    if (!name || !email || !password || !confirmPassword) {
+      setError('Please fill in all fields')
+      setLoading(false)
+      return
+    }
+
+    if (name.trim().length < 2) {
+      setError('Name must be at least 2 characters')
       setLoading(false)
       return
     }
@@ -37,13 +46,19 @@ export default function Login() {
       return
     }
 
+    if (password !== confirmPassword) {
+      setError('Passwords do not match')
+      setLoading(false)
+      return
+    }
+
     // Call real API
     try {
-      await login(email, password)
-      // Redirect to home after successful login
+      await register(name.trim(), email.trim(), password)
+      // Auto-login after successful registration, redirect to home
       navigate('/')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed. Please try again.')
+      setError(err instanceof Error ? err.message : 'Registration failed. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -82,17 +97,35 @@ export default function Login() {
                 </svg>
               </div>
             </div>
-            <h1 className="auth-title">Welcome Back</h1>
-            <p className="auth-subtitle">Sign in to continue your learning journey</p>
+            <h1 className="auth-title">Create Account</h1>
+            <p className="auth-subtitle">Sign up to start your learning journey</p>
           </div>
 
-          {/* Login Form */}
+          {/* Register Form */}
           <form onSubmit={handleSubmit} className="auth-form">
+            {/* Name Input */}
+            <div className="form-field">
+              <label htmlFor="name" className="form-label">Full Name</label>
+              <div className="form-input-wrapper">
+                <FaUser className="form-input-icon" />
+                <input
+                  type="text"
+                  id="name"
+                  className="form-input"
+                  placeholder="Enter your full name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={loading}
+                  autoComplete="name"
+                />
+              </div>
+            </div>
+
             {/* Email Input */}
             <div className="form-field">
               <label htmlFor="email" className="form-label">Email Address</label>
               <div className="form-input-wrapper">
-                <FaUser className="form-input-icon" />
+                <FaEnvelope className="form-input-icon" />
                 <input
                   type="email"
                   id="email"
@@ -119,7 +152,7 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={loading}
-                  autoComplete="current-password"
+                  autoComplete="new-password"
                 />
                 <button
                   type="button"
@@ -129,6 +162,33 @@ export default function Login() {
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <FaEyeSlash /> : <FaEye />}
+                </button>
+              </div>
+            </div>
+
+            {/* Confirm Password Input */}
+            <div className="form-field">
+              <label htmlFor="confirmPassword" className="form-label">Confirm Password</label>
+              <div className="form-input-wrapper">
+                <FaLock className="form-input-icon" />
+                <input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  id="confirmPassword"
+                  className="form-input"
+                  placeholder="Confirm your password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={loading}
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  className="form-password-toggle"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  tabIndex={-1}
+                  aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showConfirmPassword ? <FaEyeSlash /> : <FaEye />}
                 </button>
               </div>
             </div>
@@ -146,16 +206,13 @@ export default function Login() {
               className="auth-submit-button"
               disabled={loading}
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? 'Creating account...' : 'Sign Up'}
             </button>
 
             {/* Footer Links */}
             <div className="auth-footer">
-              <a href="#" className="auth-link-secondary">
-                Forgot password?
-              </a>
               <p className="auth-footer-text">
-                Don't have an account? <Link to="/register" className="auth-link-primary">Sign up</Link>
+                Already have an account? <Link to="/login" className="auth-link-primary">Sign in</Link>
               </p>
             </div>
           </form>
@@ -171,3 +228,4 @@ export default function Login() {
     </div>
   )
 }
+

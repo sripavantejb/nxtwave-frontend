@@ -1,11 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { FaClock, FaStar, FaCheckCircle, FaTimesCircle } from 'react-icons/fa'
 import { renderText } from './renderText'
+import Loader from './Loader'
 import {
   fetchRandomFlashcardJson,
   submitFlashcardRating,
   fetchFollowUpQuestion,
   submitFlashcardAnswer,
+  getNextQuestion,
+  startFlashcardSession,
   type FlashcardData,
   type FollowUpQuestion,
   type SubmitResult
@@ -21,6 +25,7 @@ type FlashcardSystemProps = {
 }
 
 export default function FlashcardSystem({ className = '' }: FlashcardSystemProps) {
+  const navigate = useNavigate()
   const [currentFlashcard, setCurrentFlashcard] = useState<FlashcardData | null>(null)
   const [showAnswer, setShowAnswer] = useState(false)
   const [rating, setRating] = useState<number | null>(null)
@@ -30,10 +35,45 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null)
   const [loading, setLoading] = useState(false)
+  const [initializing, setInitializing] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [sessionSubtopics, setSessionSubtopics] = useState<string[]>([])
+  const [completedSubtopics, setCompletedSubtopics] = useState<string[]>([])
+  const [timerActive, setTimerActive] = useState(false)
+  const [hasRated, setHasRated] = useState(false)
 
-  // Load initial flashcard
+  // Check authentication and initialize session on mount
+  useEffect(() => {
+    const token = getAuthToken()
+    if (!token) {
+      navigate('/login')
+      return
+    }
+
+    // Initialize session
+    const initSession = async () => {
+      setInitializing(true)
+      try {
+        const session = await startFlashcardSession(token)
+        setSessionSubtopics(session.sessionSubtopics)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to initialize session')
+      } finally {
+        setInitializing(false)
+      }
+    }
+
+    initSession()
+  }, [navigate])
+
+  // Load next flashcard with priority logic
   const loadFlashcard = useCallback(async () => {
+    const token = getAuthToken()
+    if (!token) {
+      navigate('/login')
+      return
+    }
+
     setLoading(true)
     setError(null)
     setShowAnswer(false)
@@ -43,87 +83,112 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     setSelectedOption(null)
     setSubmitResult(null)
     setTimeLeft(30)
+    setTimerActive(true)
+    setHasRated(false)
 
     try {
-      const token = getAuthToken()
-      const data = await fetchRandomFlashcardJson(token || undefined)
-      setCurrentFlashcard(data)
+      // Priority 1: Check for due reviews
+      try {
+        const dueQuestion = await getNextQuestion(token)
+        if (dueQuestion && 'flashcard' in dueQuestion) {
+          setCurrentFlashcard(dueQuestion as FlashcardData)
+          setLoading(false)
+          return
+        }
+      } catch (err) {
+        // No due reviews, continue to priority 2
+      }
+
+      // Priority 2: Get flashcard from session subtopics
+      const data = await fetchRandomFlashcardJson(token)
+      
+      // Check if all subtopics are completed
+      if ('allCompleted' in data && data.allCompleted) {
+        // Start new session (force new session by passing force parameter)
+        try {
+          const newSession = await startFlashcardSession(token, true) // Force new session
+          setSessionSubtopics(newSession.sessionSubtopics)
+          setCompletedSubtopics([])
+          // Try loading again with a small delay to ensure session is saved
+          await new Promise(resolve => setTimeout(resolve, 100))
+          const newData = await fetchRandomFlashcardJson(token)
+          
+          // Check if still all completed (shouldn't happen, but handle gracefully)
+          if ('allCompleted' in newData && newData.allCompleted) {
+            setError('All flashcards in new session are already completed. Please try again later.')
+            return
+          }
+          
+          if ('flashcard' in newData) {
+            setCurrentFlashcard(newData as FlashcardData)
+          } else {
+            setError('No flashcards available in new session')
+          }
+        } catch (sessionErr) {
+          console.error('Error starting new session:', sessionErr)
+          setError('Failed to start new session. Please refresh the page.')
+        }
+      } else if ('flashcard' in data) {
+        setCurrentFlashcard(data as FlashcardData)
+      } else {
+        setError('No flashcards available')
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load flashcard')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load flashcard'
+      const requiresSession = (err as any)?.requiresSession || errorMessage.includes('No active session') || errorMessage.includes('requiresSession')
+      
+      if (requiresSession) {
+        // Try to start session and retry
+        try {
+          const token = getAuthToken()
+          if (token) {
+            const session = await startFlashcardSession(token)
+            setSessionSubtopics(session.sessionSubtopics)
+            // Retry loading flashcard
+            const retryData = await fetchRandomFlashcardJson(token)
+            if (retryData && 'flashcard' in retryData) {
+              setCurrentFlashcard(retryData as FlashcardData)
+              setLoading(false)
+              return
+            } else if (retryData && 'allCompleted' in retryData && retryData.allCompleted) {
+              // All completed, start new session
+              const newSession = await startFlashcardSession(token)
+              setSessionSubtopics(newSession.sessionSubtopics)
+              setCompletedSubtopics([])
+              const newData = await fetchRandomFlashcardJson(token)
+              if (newData && 'flashcard' in newData) {
+                setCurrentFlashcard(newData as FlashcardData)
+                setLoading(false)
+                return
+              }
+            }
+            setError('No flashcards available after starting session')
+          } else {
+            setError('Authentication required')
+          }
+        } catch (retryErr) {
+          console.error('Retry error:', retryErr)
+          setError(errorMessage)
+        }
+      } else {
+        setError(errorMessage)
+      }
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [navigate])
 
   // Initial load
   useEffect(() => {
-    loadFlashcard()
-  }, [loadFlashcard])
-
-  const loadFollowUpQuestion = useCallback(async (topicId: string, diff: string, subTopic?: string) => {
-    try {
-      const token = getAuthToken()
-      const data = await fetchFollowUpQuestion(topicId, diff, subTopic, token || undefined)
-      setFollowUpQuestion(data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load follow-up question')
+    const token = getAuthToken()
+    if (token && sessionSubtopics.length > 0) {
+      loadFlashcard()
     }
-  }, [])
+  }, [sessionSubtopics.length, loadFlashcard])
 
-  const submitRating = useCallback(async (ratingValue: number) => {
-    if (!currentFlashcard) return
-
-    try {
-      const token = getAuthToken()
-      let data: { difficulty: string }
-
-      // If authenticated, use new submit-rating endpoint with JWT
-      if (token) {
-        data = await submitFlashcardRating(currentFlashcard.questionId, ratingValue, token)
-      } else {
-        // Fallback to old rate endpoint for non-authenticated users
-        const response = await fetch(
-          `${import.meta.env.VITE_API_URL || '}/api/flashcards/rate`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            mode: 'cors',
-            body: JSON.stringify({
-              questionId: currentFlashcard.questionId,
-              difficulty: ratingValue,
-            }),
-          }
-        )
-        if (!response.ok) {
-          throw new Error('Failed to submit rating')
-        }
-        data = await response.json()
-      }
-
-      setDifficulty(data.difficulty)
-
-      // Load follow-up question with subtopic
-      await loadFollowUpQuestion(
-        currentFlashcard.topicId,
-        data.difficulty,
-        currentFlashcard.subTopic
-      )
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to submit rating')
-    }
-  }, [currentFlashcard, loadFollowUpQuestion])
-
-  const handleAutoRate = useCallback(async () => {
-    if (!currentFlashcard) return
-    
-    // Auto-rate as 1 (Easy)
-    setRating(1)
-    await submitRating(1)
-  }, [currentFlashcard, submitRating])
-
-  // Timer countdown
+  // Timer countdown - enforce 30 seconds
   useEffect(() => {
-    if (!currentFlashcard || showAnswer || followUpQuestion || timeLeft <= 0) {
+    if (!currentFlashcard || showAnswer || followUpQuestion || !timerActive || timeLeft <= 0) {
       return
     }
 
@@ -132,8 +197,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         if (prev <= 1) {
           // Auto-reveal answer when time runs out
           setShowAnswer(true)
+          setTimerActive(false)
           // Auto-rate as 1 if user didn't rate
-          if (rating === null) {
+          if (!hasRated && rating === null) {
             handleAutoRate()
           }
           return 0
@@ -143,31 +209,88 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [currentFlashcard, showAnswer, followUpQuestion, timeLeft, rating, handleAutoRate])
+  }, [currentFlashcard, showAnswer, followUpQuestion, timeLeft, timerActive, hasRated, rating])
+
+  const loadFollowUpQuestion = useCallback(async (topicId: string, diff: string, subTopic?: string, flashcardQuestionId?: string) => {
+    try {
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('Authentication required')
+      }
+      const data = await fetchFollowUpQuestion(topicId, diff, subTopic, token, flashcardQuestionId)
+      setFollowUpQuestion(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load follow-up question')
+    }
+  }, [])
+
+  const handleAutoRate = useCallback(async () => {
+    if (!currentFlashcard || hasRated) return
+    
+    setHasRated(true)
+    setRating(1)
+    await submitRating(1)
+  }, [currentFlashcard, hasRated])
+
+  const submitRating = useCallback(async (ratingValue: number) => {
+    if (!currentFlashcard) return
+
+    try {
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('Authentication required')
+      }
+
+      const data = await submitFlashcardRating(currentFlashcard.questionId, ratingValue, token)
+      setDifficulty(data.difficulty)
+
+      // Load follow-up question with subtopic and flashcard linkage
+      await loadFollowUpQuestion(
+        currentFlashcard.topicId,
+        data.difficulty,
+        currentFlashcard.subTopic,
+        currentFlashcard.questionId
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to submit rating')
+    }
+  }, [currentFlashcard, loadFollowUpQuestion])
 
   const handleRating = async (ratingValue: number) => {
+    if (hasRated || !timerActive) return // Prevent rating after timeout
+    
+    setHasRated(true)
     setRating(ratingValue)
     setShowAnswer(true)
+    setTimerActive(false)
     await submitRating(ratingValue)
   }
 
   const handleSubmitAnswer = async () => {
-    if (!followUpQuestion || !selectedOption) return
+    if (!followUpQuestion || !selectedOption || !currentFlashcard) return
 
     setLoading(true)
     try {
       const token = getAuthToken()
-
       if (!token) {
         throw new Error('Authentication required to submit answers')
       }
 
+      // Submit answer with flashcard context using the API client
       const data = await submitFlashcardAnswer(
         followUpQuestion.questionId,
         selectedOption,
-        token
+        token,
+        currentFlashcard.questionId,
+        currentFlashcard.subTopic
       )
+      
       setSubmitResult(data)
+
+      // Mark subtopic as completed
+      if (currentFlashcard.subTopic && !completedSubtopics.includes(currentFlashcard.subTopic)) {
+        setCompletedSubtopics([...completedSubtopics, currentFlashcard.subTopic])
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit answer')
     } finally {
@@ -179,12 +302,33 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     loadFlashcard()
   }
 
-  if (loading && !currentFlashcard) {
+  // Check authentication
+  const token = getAuthToken()
+  if (!token) {
     return (
       <div className={`flashcard-system ${className}`}>
         <div style={{ textAlign: 'center', padding: '40px' }}>
-          <p>Loading flashcard...</p>
+          <p>Please log in to use flashcards</p>
+          <button className="btn" onClick={() => navigate('/login')} style={{ marginTop: '20px' }}>
+            Go to Login
+          </button>
         </div>
+      </div>
+    )
+  }
+
+  if (initializing) {
+    return (
+      <div className={`flashcard-system ${className}`}>
+        <Loader message="Initializing flashcard session..." />
+      </div>
+    )
+  }
+
+  if (loading && !currentFlashcard) {
+    return (
+      <div className={`flashcard-system ${className}`}>
+        <Loader message="Loading flashcard..." />
       </div>
     )
   }
@@ -204,10 +348,25 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
 
   return (
     <div className={`flashcard-system ${className}`}>
+      {/* Session Progress */}
+      {sessionSubtopics.length > 0 && (
+        <div style={{ 
+          marginBottom: '20px', 
+          padding: '12px', 
+          background: '#f0f9ff', 
+          borderRadius: '8px',
+          textAlign: 'center'
+        }}>
+          <p style={{ fontSize: '14px', color: '#0369a1', margin: 0 }}>
+            Session Progress: {completedSubtopics.length} / {sessionSubtopics.length} subtopics completed
+          </p>
+        </div>
+      )}
+
       {currentFlashcard && !followUpQuestion && (
         <div className="flashcard-card">
           {/* Timer */}
-          {!showAnswer && (
+          {!showAnswer && timerActive && (
             <div style={{ 
               display: 'flex', 
               alignItems: 'center', 
@@ -246,7 +405,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           </div>
 
           {/* Rating Stars (shown before answer reveal) */}
-          {!showAnswer && (
+          {!showAnswer && timerActive && (
             <div style={{ marginBottom: '20px' }}>
               <p style={{ textAlign: 'center', marginBottom: '12px', fontWeight: 600 }}>
                 How well do you know this concept?
@@ -256,15 +415,21 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
                   <button
                     key={star}
                     onClick={() => handleRating(star)}
+                    disabled={hasRated || !timerActive}
                     style={{
                       background: 'none',
                       border: 'none',
-                      cursor: 'pointer',
+                      cursor: hasRated || !timerActive ? 'not-allowed' : 'pointer',
                       fontSize: '32px',
                       color: rating && rating >= star ? '#facc15' : '#d1d5db',
-                      transition: 'color 0.2s'
+                      transition: 'color 0.2s',
+                      opacity: hasRated || !timerActive ? 0.5 : 1
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.color = '#facc15'}
+                    onMouseEnter={(e) => {
+                      if (!hasRated && timerActive && (!rating || rating < star)) {
+                        e.currentTarget.style.color = '#facc15'
+                      }
+                    }}
                     onMouseLeave={(e) => {
                       if (!rating || rating < star) {
                         e.currentTarget.style.color = '#d1d5db'
