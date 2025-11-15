@@ -179,6 +179,7 @@ export type FlashcardData = {
   subTopic: string
   topicId: string
   isDueReview?: boolean
+  hint?: string
 }
 
 export type FollowUpQuestion = {

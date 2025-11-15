@@ -41,6 +41,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   const [completedSubtopics, setCompletedSubtopics] = useState<string[]>([])
   const [timerActive, setTimerActive] = useState(false)
   const [hasRated, setHasRated] = useState(false)
+  const [followUpTimer, setFollowUpTimer] = useState(60)
+  const [followUpTimerActive, setFollowUpTimerActive] = useState(false)
+  const [showHint, setShowHint] = useState(false)
 
   // Check authentication and initialize session on mount
   useEffect(() => {
@@ -85,12 +88,16 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     setTimeLeft(30)
     setTimerActive(true)
     setHasRated(false)
+    setFollowUpTimer(60)
+    setFollowUpTimerActive(false)
+    setShowHint(false)
 
     try {
       // Priority 1: Check for due reviews
       try {
         const dueQuestion = await getNextQuestion(token)
         if (dueQuestion && 'flashcard' in dueQuestion) {
+          console.log('Loaded flashcard from due reviews:', dueQuestion)
           setCurrentFlashcard(dueQuestion as FlashcardData)
           setLoading(false)
           return
@@ -101,6 +108,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
 
       // Priority 2: Get flashcard from session subtopics
       const data = await fetchRandomFlashcardJson(token)
+      console.log('Loaded flashcard data:', data)
       
       // Check if all subtopics are completed
       if ('allCompleted' in data && data.allCompleted) {
@@ -211,6 +219,60 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     return () => clearInterval(timer)
   }, [currentFlashcard, showAnswer, followUpQuestion, timeLeft, timerActive, hasRated, rating])
 
+  const handleAutoSubmitAnswer = useCallback(async () => {
+    if (!followUpQuestion || !currentFlashcard) return
+
+    setLoading(true)
+    setFollowUpTimerActive(false)
+    try {
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('Authentication required to submit answers')
+      }
+
+      // Submit with no answer (empty string) - this will mark as wrong
+      const data = await submitFlashcardAnswer(
+        followUpQuestion.questionId,
+        '',
+        token,
+        currentFlashcard.questionId,
+        currentFlashcard.subTopic
+      )
+      
+      setSubmitResult(data)
+
+      // Mark subtopic as completed
+      if (currentFlashcard.subTopic && !completedSubtopics.includes(currentFlashcard.subTopic)) {
+        setCompletedSubtopics([...completedSubtopics, currentFlashcard.subTopic])
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to submit answer')
+    } finally {
+      setLoading(false)
+    }
+  }, [followUpQuestion, currentFlashcard, completedSubtopics])
+
+  // Timer countdown for follow-up question - 60 seconds
+  useEffect(() => {
+    if (!followUpQuestion || !followUpTimerActive || submitResult || followUpTimer <= 0) {
+      return
+    }
+
+    const timer = setInterval(() => {
+      setFollowUpTimer((prev) => {
+        if (prev <= 1) {
+          // Time's up - auto submit with no answer (marks as wrong)
+          setFollowUpTimerActive(false)
+          handleAutoSubmitAnswer()
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [followUpQuestion, followUpTimerActive, submitResult, followUpTimer, handleAutoSubmitAnswer])
+
   const loadFollowUpQuestion = useCallback(async (topicId: string, diff: string, subTopic?: string, flashcardQuestionId?: string) => {
     try {
       const token = getAuthToken()
@@ -219,6 +281,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       }
       const data = await fetchFollowUpQuestion(topicId, diff, subTopic, token, flashcardQuestionId)
       setFollowUpQuestion(data)
+      // Start timer for follow-up question
+      setFollowUpTimer(60)
+      setFollowUpTimerActive(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load follow-up question')
     }
@@ -269,6 +334,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   const handleSubmitAnswer = async () => {
     if (!followUpQuestion || !selectedOption || !currentFlashcard) return
 
+    // Stop timer when user submits manually
+    setFollowUpTimerActive(false)
     setLoading(true)
     try {
       const token = getAuthToken()
@@ -299,6 +366,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   }
 
   const handleNextFlashcard = () => {
+    // Reset follow-up timer state
+    setFollowUpTimer(60)
+    setFollowUpTimerActive(false)
     loadFlashcard()
   }
 
@@ -404,6 +474,53 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
             {renderText(currentFlashcard.flashcard)}
           </div>
 
+          {/* Hint (shown before answer reveal) */}
+          {!showAnswer && timerActive && (
+            <div style={{ marginBottom: '20px' }}>
+              <button
+                onClick={() => {
+                  setShowHint(!showHint)
+                }}
+                style={{
+                  background: 'none',
+                  border: '2px solid #f59e0b',
+                  color: '#d97706',
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  width: '100%',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#fffbeb'
+                  e.currentTarget.style.borderColor = '#d97706'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'none'
+                  e.currentTarget.style.borderColor = '#f59e0b'
+                }}
+              >
+                {showHint ? 'Hide Hint' : 'Show Hint'}
+              </button>
+              {showHint && currentFlashcard.flashcardAnswer && (
+                <div style={{ 
+                  background: '#fffbeb', 
+                  border: '2px solid #f59e0b',
+                  padding: '24px', 
+                  borderRadius: '12px',
+                  marginTop: '12px'
+                }}>
+                  <h3 style={{ color: '#d97706', marginBottom: '12px', fontSize: '18px' }}>
+                    Hint:
+                  </h3>
+                  {renderText(currentFlashcard.flashcardAnswer)}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Rating Stars (shown before answer reveal) */}
           {!showAnswer && timerActive && (
             <div style={{ marginBottom: '20px' }}>
@@ -493,6 +610,23 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
               Follow-up Question - {followUpQuestion.difficulty}
             </span>
           </div>
+
+          {/* Timer for follow-up question */}
+          {followUpTimerActive && (
+            <div className="quiz-timer" style={{ 
+              marginBottom: '20px',
+              alignItems: 'center',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center'
+            }}>
+              <span className="quiz-timer-label">Time Left</span>
+              <span className={`quiz-timer-value ${followUpTimer <= 10 ? 'danger' : ''}`}>
+                {followUpTimer}s
+              </span>
+            </div>
+          )}
 
           <div style={{ marginBottom: '24px' }}>
             {renderText(followUpQuestion.question)}
