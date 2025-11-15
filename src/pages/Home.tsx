@@ -1,5 +1,4 @@
-import { Link } from 'react-router-dom'
-import { FaArrowRight, FaGraduationCap, FaLightbulb, FaChartLine, FaTrophy } from 'react-icons/fa'
+import { FaLightbulb, FaChartLine, FaTrophy } from 'react-icons/fa'
 import FlashcardSystem from '../components/FlashcardSystem'
 
 export default function Home() {
@@ -7,8 +6,8 @@ export default function Home() {
   return (
     <div style={{ paddingBottom: 48 }}>
       <div id="home" className="hero">
-        <h1>Choose a Concept to Begin</h1>
-        <p>Rate yourself and take a 6-question adaptive quiz.</p>
+        <h1>Master Concepts with Interactive Flashcards</h1>
+        <p>Learn, practice, and reinforce your knowledge with our adaptive flashcard system powered by spaced repetition.</p>
       </div>
 
       {/* Flashcard Learning Section */}
@@ -92,101 +91,6 @@ export default function Home() {
             </div>
           </div>
         </div>
-      </section>
-
-      {/* Conceptual Learning Path Section */}
-      <section id="learn-concepts" style={{ marginTop: 48, marginBottom: 48, scrollMarginTop: '90px' }}>
-        <Link to="/conceptual-guidelines" style={{ textDecoration: 'none', display: 'block' }}>
-          <div 
-            className="featured-card"
-            style={{ 
-              background: 'linear-gradient(135deg, #991B1B 0%, #7F1D1D 100%)',
-              color: 'white',
-              padding: '48px 40px',
-              textAlign: 'center',
-              cursor: 'pointer',
-              position: 'relative',
-              overflow: 'hidden',
-              borderRadius: '20px',
-              boxShadow: '0 20px 60px rgba(153, 27, 27, 0.25)',
-              border: 'none',
-              transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-8px) scale(1.01)'
-              e.currentTarget.style.boxShadow = '0 30px 80px rgba(153, 27, 27, 0.35)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0) scale(1)'
-              e.currentTarget.style.boxShadow = '0 20px 60px rgba(153, 27, 27, 0.25)'
-            }}>
-            {/* Decorative elements */}
-            <div style={{
-              position: 'absolute',
-              top: '-50px',
-              right: '-50px',
-              width: '200px',
-              height: '200px',
-              background: 'radial-gradient(circle, rgba(255, 255, 255, 0.15) 0%, transparent 70%)',
-              borderRadius: '50%',
-              pointerEvents: 'none'
-            }} />
-            <div style={{
-              position: 'absolute',
-              bottom: '-80px',
-              left: '-80px',
-              width: '250px',
-              height: '250px',
-              background: 'radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%)',
-              borderRadius: '50%',
-              pointerEvents: 'none'
-            }} />
-            
-            {/* Content */}
-            <div style={{ position: 'relative', zIndex: 1 }}>
-              <div style={{ 
-                fontSize: '64px', 
-                marginBottom: '20px',
-                display: 'inline-block',
-                padding: '16px',
-                background: 'rgba(255, 255, 255, 0.15)',
-                borderRadius: '20px',
-                backdropFilter: 'blur(10px)'
-              }}>
-                <FaGraduationCap />
-              </div>
-              <h2 style={{ 
-                fontSize: '36px', 
-                fontWeight: 800, 
-                marginBottom: '16px', 
-                color: 'white',
-                letterSpacing: '-0.02em'
-              }}>
-                Conceptual Learning Path
-              </h2>
-              <p style={{ 
-                fontSize: '18px', 
-                marginBottom: '32px', 
-                opacity: 0.95, 
-                lineHeight: 1.7,
-                maxWidth: '700px',
-                margin: '0 auto 32px'
-              }}>
-                Follow a structured journey through key concepts. Each concept is followed by a practice question tailored to your rating!
-              </p>
-              <div className="btn btn-white" style={{ 
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '10px',
-                fontSize: '16px',
-                fontWeight: 700,
-                padding: '16px 32px'
-              }}>
-                Start Learning Journey <FaArrowRight />
-              </div>
-            </div>
-          </div>
-        </Link>
       </section>
 
       {/* About Section */}

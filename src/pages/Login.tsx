@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { FaUser, FaLock, FaEye, FaEyeSlash } from 'react-icons/fa'
+import { FaEnvelope, FaLock, FaEye, FaEyeSlash } from 'react-icons/fa'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Login() {
@@ -57,28 +57,10 @@ export default function Login() {
           <div className="auth-header">
             <div className="auth-logo-wrapper">
               <div className="auth-logo-icon">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M12 2L2 7L12 12L22 7L12 2Z"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M2 17L12 22L22 17"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M2 12L12 17L22 12"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="3" y="3" width="18" height="4" rx="1" fill="currentColor" opacity="0.9"/>
+                  <rect x="3" y="10" width="18" height="4" rx="1" fill="currentColor" opacity="0.7" transform="translate(0, 0)"/>
+                  <rect x="3" y="17" width="18" height="4" rx="1" fill="currentColor" opacity="0.5" transform="translate(0, 0)"/>
                 </svg>
               </div>
             </div>
@@ -92,7 +74,7 @@ export default function Login() {
             <div className="form-field">
               <label htmlFor="email" className="form-label">Email Address</label>
               <div className="form-input-wrapper">
-                <FaUser className="form-input-icon" />
+                <FaEnvelope className="form-input-icon" />
                 <input
                   type="email"
                   id="email"
