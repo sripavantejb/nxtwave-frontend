@@ -44,8 +44,8 @@ function getBaseUrl(): string {
     return 'https://nxtwave-backend-p4cf.onrender.com'
   }
   
-  // In production, use relative URLs (same origin)
-  return ''
+  // In production, use the hosted backend server
+  return 'https://nxtwave-backend-p4cf.onrender.com'
 }
 
 const BASE_URL = getBaseUrl()
