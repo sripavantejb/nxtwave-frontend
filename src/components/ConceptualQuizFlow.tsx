@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import type { QuizQuestion } from '../api/client'
-import { fetchSingleQuestion } from '../api/client'
+import type { QuizQuestion, Concept } from '../api/client'
+import { fetchSingleQuestion, fetchConcepts } from '../api/client'
 import MathBlock from './MathBlock'
 import Loader from './Loader'
 
@@ -94,71 +94,11 @@ function WarningModal({ isOpen, title, message, remainingSwitches, onConfirm, on
   )
 }
 
-type ConceptualCard = {
-  id: string
-  question: string
-  answer: string
-  explanation?: string
-  topicId: string
-  difficulty: 'easy' | 'medium' | 'hard'
-}
-
-type Phase = 'conceptual' | 'loading' | 'practice' | 'result'
-
-const CONCEPTUAL_QUESTIONS: ConceptualCard[] = [
-  {
-    id: 'concept-1',
-    question: 'Do you remember the formula for calculating Simple Interest?',
-    answer: 'SI = $\\frac{P \\times R \\times T}{100}$',
-    explanation: 'Where P = Principal, R = Rate of interest per annum, T = Time in years',
-    topicId: 'si',
-    difficulty: 'easy'
-  },
-  {
-    id: 'concept-2',
-    question: 'Do you remember the formula for Compound Interest?',
-    answer: 'CI = $P(1 + \\frac{R}{100})^T - P$',
-    explanation: 'Where P = Principal, R = Rate of interest per annum, T = Time in years',
-    topicId: 'ci',
-    difficulty: 'easy'
-  },
-  {
-    id: 'concept-3',
-    question: 'Do you remember which one gives more interest for the same principal, rate, and time - SI or CI?',
-    answer: 'Compound Interest (CI) always gives more interest than Simple Interest (SI)',
-    explanation: 'This is because in CI, interest is calculated on the accumulated amount (principal + previous interest), while in SI, interest is only calculated on the principal.',
-    topicId: 'si-ci',
-    difficulty: 'medium'
-  },
-  {
-    id: 'concept-4',
-    question: 'Do you remember what CP and SP stand for in Profit & Loss problems?',
-    answer: 'CP = Cost Price, SP = Selling Price',
-    explanation: 'CP is the price at which an item is purchased, and SP is the price at which it is sold.',
-    topicId: 'profit-loss',
-    difficulty: 'easy'
-  },
-  {
-    id: 'concept-5',
-    question: 'Do you remember what MP and SP represent in Profit & Loss problems?',
-    answer: 'MP = Marked Price, SP = Selling Price',
-    explanation: 'MP is the price marked on the product (list price), and SP is the actual selling price after discount.',
-    topicId: 'profit-loss',
-    difficulty: 'easy'
-  },
-  {
-    id: 'concept-6',
-    question: 'Do you remember how to calculate profit or loss percentage when CP is not given but SP and Profit/Loss are known?',
-    answer: 'Profit % = $\\frac{Profit}{CP} \\times 100 = \\frac{Profit}{SP - Profit} \\times 100$',
-    explanation: 'Since CP = SP - Profit (or CP = SP + Loss), we can calculate the percentage even when CP is not directly given.',
-    topicId: 'profit-loss',
-    difficulty: 'medium'
-  }
-]
+type Phase = 'loading-concepts' | 'conceptual' | 'loading' | 'practice' | 'result'
 
 const RATING_VALUES = [1, 2, 3, 4, 5] as const
 const STORAGE_KEY_PREFIX = 'nxtquiz_conceptual_'
-const MAX_TAB_SWITCHES = 2
+const MAX_CONCEPTS = 6 // Limit to 6 concepts for the learning flow
 
 function RatingScale({
   disabled,
@@ -187,13 +127,14 @@ function RatingScale({
 
 export default function ConceptualQuizFlow() {
   const navigate = useNavigate()
-  const [phase, setPhase] = useState<Phase>('conceptual')
+  const [phase, setPhase] = useState<Phase>('loading-concepts')
+  const [concepts, setConcepts] = useState<Concept[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [userRating, setUserRating] = useState<number | null>(null)
   const [practiceQuestion, setPracticeQuestion] = useState<QuizQuestion | null>(null)
   const [selectedOption, setSelectedOption] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [loadingMessage, setLoadingMessage] = useState('')
+  const [loadingMessage, setLoadingMessage] = useState('Loading concepts from CSV...')
   const [timer, setTimer] = useState(60)
   const [timerStartTime, setTimerStartTime] = useState<number | null>(null)
   const [showWarningModal, setShowWarningModal] = useState(false)
@@ -205,12 +146,11 @@ export default function ConceptualQuizFlow() {
   const conceptualTimerStartRef = useRef<number | null>(null)
   const conceptualToastIdRef = useRef<ReturnType<typeof toast> | string | number | null>(null)
   const conceptualToastCountdownRef = useRef<number | null>(null)
-  const wasTabHiddenRef = useRef(false)
   const fullscreenAttemptedRef = useRef(false)
   const isInitialMount = useRef(true)
 
-  const currentConcept = CONCEPTUAL_QUESTIONS[currentIndex]
-  const isLastConcept = currentIndex >= CONCEPTUAL_QUESTIONS.length - 1
+  const currentConcept = concepts[currentIndex]
+  const isLastConcept = currentIndex >= concepts.length - 1
 
   const getStorageKey = useCallback((key: string) => {
     return `${STORAGE_KEY_PREFIX}${key}`
@@ -221,20 +161,8 @@ export default function ConceptualQuizFlow() {
     localStorage.removeItem(getStorageKey('phase'))
     localStorage.removeItem(getStorageKey('timer'))
     localStorage.removeItem(getStorageKey('timerStartTime'))
-    localStorage.removeItem(getStorageKey('tabSwitchCount'))
     localStorage.removeItem('conceptual_guidelines_accepted')
   }, [getStorageKey])
-
-  const getTabSwitchCount = useCallback(() => {
-    const count = localStorage.getItem(getStorageKey('tabSwitchCount'))
-    return count ? parseInt(count, 10) : 0
-  }, [getStorageKey])
-
-  const incrementTabSwitchCount = useCallback(() => {
-    const current = getTabSwitchCount()
-    localStorage.setItem(getStorageKey('tabSwitchCount'), (current + 1).toString())
-    return current + 1
-  }, [getStorageKey, getTabSwitchCount])
 
   const enterFullscreen = useCallback(() => {
     if (fullscreenAttemptedRef.current) return
@@ -512,25 +440,56 @@ export default function ConceptualQuizFlow() {
     }
   }, [])
 
-  // Check guidelines acceptance and initialize
+  // Fetch concepts from CSV on mount
   useEffect(() => {
-    const guidelinesAccepted = localStorage.getItem('conceptual_guidelines_accepted')
-    
-    if (!guidelinesAccepted) {
-      navigate('/conceptual-guidelines')
-      return
-    }
+    const loadConcepts = async () => {
+      try {
+        setLoadingMessage('Loading concepts from CSV...')
+        const response = await fetchConcepts()
+        let loadedConcepts = response.concepts || []
+        
+        // Limit to MAX_CONCEPTS and shuffle for variety
+        if (loadedConcepts.length > MAX_CONCEPTS) {
+          // Shuffle and take first MAX_CONCEPTS
+          loadedConcepts = loadedConcepts
+            .sort(() => Math.random() - 0.5)
+            .slice(0, MAX_CONCEPTS)
+        }
+        
+        if (loadedConcepts.length === 0) {
+          setError('No concepts available in the CSV file. Please ensure the CSV file contains flashcard data.')
+          setPhase('result')
+          return
+        }
+        
+        setConcepts(loadedConcepts)
+        
+        // Check guidelines acceptance
+        const guidelinesAccepted = localStorage.getItem('conceptual_guidelines_accepted')
+        if (!guidelinesAccepted) {
+          navigate('/conceptual-guidelines')
+          return
+        }
 
-    // Try to restore from localStorage
-    const savedIndex = localStorage.getItem(getStorageKey('currentIndex'))
-    if (savedIndex !== null && isInitialMount.current) {
-      const restoredIndex = parseInt(savedIndex, 10)
-      if (!isNaN(restoredIndex) && restoredIndex >= 0 && restoredIndex < CONCEPTUAL_QUESTIONS.length) {
-        setCurrentIndex(restoredIndex)
+        // Try to restore from localStorage
+        const savedIndex = localStorage.getItem(getStorageKey('currentIndex'))
+        if (savedIndex !== null && isInitialMount.current) {
+          const restoredIndex = parseInt(savedIndex, 10)
+          if (!isNaN(restoredIndex) && restoredIndex >= 0 && restoredIndex < loadedConcepts.length) {
+            setCurrentIndex(restoredIndex)
+          }
+        }
+
+        setPhase('conceptual')
+        isInitialMount.current = false
+      } catch (err) {
+        console.error('Error loading concepts:', err)
+        setError(err instanceof Error ? err.message : 'Failed to load concepts from CSV file')
+        setPhase('result')
       }
     }
-
-    isInitialMount.current = false
+    
+    loadConcepts()
   }, [navigate, getStorageKey])
 
   // Save progress to localStorage
@@ -580,57 +539,16 @@ export default function ConceptualQuizFlow() {
       setShowWarningModal(true)
     }
 
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        wasTabHiddenRef.current = true
-      } else if (wasTabHiddenRef.current) {
-        const newCount = incrementTabSwitchCount()
-        const remaining = MAX_TAB_SWITCHES - newCount
-
-        if (newCount >= MAX_TAB_SWITCHES) {
-          clearLearningStorage()
-          exitFullscreen()
-          toast.error('Learning session terminated due to multiple tab switches. Your progress has been lost.')
-          setTimeout(() => {
-            navigate('/')
-          }, 1000)
-        } else {
-          setModalConfig({
-            title: '⚠️ Tab Switch Warning',
-            message: `You have switched tabs. Your learning session will be terminated if you switch tabs ${remaining} more time${remaining === 1 ? '' : 's'}. Click OK to continue with your session, or Cancel to terminate.`,
-            remainingSwitches: remaining,
-            onConfirm: () => {
-              setShowWarningModal(false)
-              toast.success('Continuing with your learning session. Please stay on this page.')
-            },
-            onCancel: () => {
-              setShowWarningModal(false)
-              clearLearningStorage()
-              exitFullscreen()
-              toast.error('Learning session terminated due to tab switching. Your progress has been lost.')
-              setTimeout(() => {
-                navigate('/')
-              }, 1000)
-            }
-          })
-          setShowWarningModal(true)
-        }
-        wasTabHiddenRef.current = false
-      }
-    }
-
     window.history.pushState(null, '', window.location.href)
     
     window.addEventListener('beforeunload', handleBeforeUnload)
     window.addEventListener('popstate', handlePopState)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       window.removeEventListener('popstate', handlePopState)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [navigate, clearLearningStorage, incrementTabSwitchCount, exitFullscreen])
+  }, [navigate, clearLearningStorage, exitFullscreen])
 
   const renderText = useCallback((text: string) => {
     const parts = text.split(/(\$[^$]+\$)/g)
@@ -647,15 +565,30 @@ export default function ConceptualQuizFlow() {
   }, [])
 
   const progressPercentage = useMemo(() => {
-    return Math.round(((currentIndex + (phase === 'result' ? 1 : 0)) / CONCEPTUAL_QUESTIONS.length) * 100)
-  }, [currentIndex, phase])
+    if (concepts.length === 0) return 0
+    return Math.round(((currentIndex + (phase === 'result' ? 1 : 0)) / concepts.length) * 100)
+  }, [currentIndex, phase, concepts.length])
 
-  const remainingWarnings = useMemo(() => Math.max(0, MAX_TAB_SWITCHES - getTabSwitchCount()), [getTabSwitchCount])
   const timerIsCritical = timer <= 10
   const isCorrect = selectedOption !== null && practiceQuestion && selectedOption === practiceQuestion.answerIndex
 
-  if (phase === 'loading') {
+  if (phase === 'loading-concepts' || phase === 'loading') {
     return <Loader message={loadingMessage} />
+  }
+
+  if (error && concepts.length === 0) {
+    return (
+      <div style={{ padding: 24, textAlign: 'center' }}>
+        <p className="muted" style={{ marginBottom: 16 }}>Error: {error}</p>
+        <button className="btn btn-primary" onClick={() => window.location.reload()}>
+          Reload Page
+        </button>
+      </div>
+    )
+  }
+
+  if (concepts.length === 0) {
+    return <Loader message="Loading concepts..." />
   }
 
   return (
@@ -667,7 +600,7 @@ export default function ConceptualQuizFlow() {
             <h1 className="quiz-title">Master the Fundamentals</h1>
             <div className="quiz-header-meta">
               <span className="quiz-chip">
-                Concept {currentIndex + 1} of {CONCEPTUAL_QUESTIONS.length}
+                Concept {currentIndex + 1} of {concepts.length}
               </span>
               {currentConcept && (
                 <span className={`quiz-chip difficulty-${currentConcept.difficulty}`}>
@@ -706,17 +639,13 @@ export default function ConceptualQuizFlow() {
                 </li>
                 <li>
                   <span>Remaining</span>
-                  <strong>{CONCEPTUAL_QUESTIONS.length - currentIndex - 1}</strong>
+                  <strong>{Math.max(0, concepts.length - currentIndex - 1)}</strong>
                 </li>
                 <li>
                   <span>Phase</span>
                   <strong className={`difficulty-tag difficulty-${currentConcept?.difficulty || 'medium'}`}>
                     {phase === 'conceptual' ? 'Concept' : phase === 'practice' ? 'Practice' : 'Review'}
                   </strong>
-                </li>
-                <li>
-                  <span>Tab warnings</span>
-                  <strong>{remainingWarnings}</strong>
                 </li>
               </ul>
             </div>
@@ -726,7 +655,7 @@ export default function ConceptualQuizFlow() {
                 <li>Read each concept carefully.</li>
                 <li>Rate your understanding (1-5).</li>
                 <li>Solve practice question in 60 seconds.</li>
-                <li>Switching tabs more than twice will terminate the session.</li>
+                <li>Your progress is automatically saved.</li>
               </ul>
             </div>
           </aside>

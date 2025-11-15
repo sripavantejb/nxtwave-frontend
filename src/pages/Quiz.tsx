@@ -105,7 +105,6 @@ function WarningModal({ isOpen, title, message, remainingSwitches, onConfirm, on
 }
 
 const STORAGE_KEY_PREFIX = 'nxtquiz_'
-const MAX_TAB_SWITCHES = 2
 
 export default function Quiz() {
   const { topicId, rating } = useParams()
@@ -120,7 +119,6 @@ export default function Quiz() {
   const [timerStartTime, setTimerStartTime] = useState<number | null>(null)
   const prevIndexRef = useRef<number | null>(null)
   const isInitialMount = useRef(true)
-  const wasTabHiddenRef = useRef(false)
   const [showWarningModal, setShowWarningModal] = useState(false)
   const [modalConfig, setModalConfig] = useState<{ title: string; message: string; remainingSwitches?: number; onConfirm: () => void; onCancel: () => void } | null>(null)
   const fullscreenAttemptedRef = useRef(false)
@@ -136,26 +134,10 @@ export default function Quiz() {
     localStorage.removeItem(getStorageKey('index'))
     localStorage.removeItem(getStorageKey('timer'))
     localStorage.removeItem(getStorageKey('timerStartTime'))
-    localStorage.removeItem(getStorageKey('tabSwitchCount'))
     // Clear guidelines acceptance so user must accept again for retakes
     const acceptanceKey = `guidelines_accepted_${topicId}_${rating}`
     localStorage.removeItem(acceptanceKey)
   }, [topicId, rating, getStorageKey])
-
-  const getTabSwitchCount = useCallback(() => {
-    const count = localStorage.getItem(getStorageKey('tabSwitchCount'))
-    return count ? parseInt(count, 10) : 0
-  }, [getStorageKey])
-
-  const incrementTabSwitchCount = useCallback(() => {
-    const current = getTabSwitchCount()
-    localStorage.setItem(getStorageKey('tabSwitchCount'), (current + 1).toString())
-    return current + 1
-  }, [getStorageKey, getTabSwitchCount])
-
-  const resetTabSwitchCount = useCallback(() => {
-    localStorage.removeItem(getStorageKey('tabSwitchCount'))
-  }, [getStorageKey])
 
   const enterFullscreen = useCallback(() => {
     if (fullscreenAttemptedRef.current) return
@@ -235,7 +217,6 @@ export default function Quiz() {
         setTimerStartTime(startTime)
         setLoading(false)
         isInitialMount.current = false
-        // Tab switch count is already persisted in localStorage, no need to restore
         return
       } catch (e) {
         // If restoration fails, fetch new quiz
@@ -259,12 +240,11 @@ export default function Quiz() {
         localStorage.setItem(getStorageKey('index'), '0')
         localStorage.setItem(getStorageKey('timer'), '60')
         localStorage.setItem(getStorageKey('timerStartTime'), now.toString())
-        resetTabSwitchCount() // Reset tab switch count for new quiz
         isInitialMount.current = false
       })
       .catch(err => { setError(err.message); setLoading(false) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topicId, rating, resetTabSwitchCount])
+  }, [topicId, rating])
 
   // Enter fullscreen when quiz is ready
   useEffect(() => {
@@ -392,66 +372,19 @@ export default function Quiz() {
       setShowWarningModal(true)
     }
 
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Tab switched or minimized - mark that it was hidden
-        wasTabHiddenRef.current = true
-      } else if (wasTabHiddenRef.current) {
-        // User switched back to the tab - check switch count
-        const newCount = incrementTabSwitchCount()
-        const remaining = MAX_TAB_SWITCHES - newCount
-
-        if (newCount >= MAX_TAB_SWITCHES) {
-          // Terminate immediately after 2 switches
-          clearQuizStorage()
-          exitFullscreen()
-          toast.error('Exam terminated due to multiple tab switches. Your progress has been lost.')
-          setTimeout(() => {
-            navigate('/')
-          }, 1000)
-        } else {
-          // Show warning with remaining count
-          setModalConfig({
-            title: '⚠️ Tab Switch Warning',
-            message: `You have switched tabs. Your exam will be terminated if you switch tabs ${remaining} more time${remaining === 1 ? '' : 's'}. Click OK to continue with your exam, or Cancel to terminate.`,
-            remainingSwitches: remaining,
-            onConfirm: () => {
-              // User clicked OK - continue with exam
-              setShowWarningModal(false)
-              toast.success('Continuing with your exam. Please stay on this page.')
-            },
-            onCancel: () => {
-              // User clicked Cancel - terminate exam
-              setShowWarningModal(false)
-              clearQuizStorage()
-              exitFullscreen()
-              toast.error('Exam terminated due to tab switching. Your progress has been lost.')
-              setTimeout(() => {
-                navigate('/')
-              }, 1000)
-            }
-          })
-          setShowWarningModal(true)
-        }
-        wasTabHiddenRef.current = false
-      }
-    }
-
     // Push a state to detect back button
     window.history.pushState(null, '', window.location.href)
     
     // Add event listeners
     window.addEventListener('beforeunload', handleBeforeUnload)
     window.addEventListener('popstate', handlePopState)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     // Cleanup
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       window.removeEventListener('popstate', handlePopState)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [loading, topicId, rating, clearQuizStorage, navigate, incrementTabSwitchCount, resetTabSwitchCount, exitFullscreen])
+  }, [loading, topicId, rating, clearQuizStorage, navigate, exitFullscreen])
 
   const progressText = useMemo(() => `Question ${Math.min(index + 1, totalQuestions)} of ${totalQuestions}`, [index, totalQuestions])
   const progressPercentage = useMemo(() => {
@@ -465,7 +398,6 @@ export default function Quiz() {
       .replace(/\b\w/g, (char: string) => char.toUpperCase())
   }, [topicId])
   const difficultyLabel = current?.difficulty ?? 'medium'
-  const remainingWarnings = useMemo(() => Math.max(0, MAX_TAB_SWITCHES - getTabSwitchCount()), [getTabSwitchCount])
   const answeredCount = answers.length
   const remainingCount = Math.max(totalQuestions - (index + 1), 0)
   const timerIsCritical = timer <= 10
@@ -524,10 +456,6 @@ export default function Quiz() {
                       {difficultyLabel.charAt(0).toUpperCase() + difficultyLabel.slice(1)}
                     </strong>
                   </li>
-                  <li>
-                    <span>Tab warnings</span>
-                    <strong>{remainingWarnings}</strong>
-                  </li>
                 </ul>
               </div>
               <div className="card quiz-sidebar-card">
@@ -535,7 +463,7 @@ export default function Quiz() {
                 <ul className="quiz-guidelines">
                   <li>Each question is timed at 60 seconds.</li>
                   <li>Submit to lock your answer or Skip to move ahead.</li>
-                  <li>Switching tabs more than twice will terminate the quiz.</li>
+                  <li>Your progress is automatically saved.</li>
                 </ul>
               </div>
             </aside>

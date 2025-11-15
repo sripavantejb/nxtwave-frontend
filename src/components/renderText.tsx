@@ -3,25 +3,41 @@ import MathBlock from './MathBlock'
 export function renderText(text: string) {
   if (!text) return null
   
-  // Normalize escaped newlines from API (e.g., "\\n") to actual newlines
-  let normalized = text.replace(/\\n/g, '\n')
+  // Step 1: Handle all possible newline representations
+  // Replace literal \n string sequences (not escape sequences) with actual newlines
+  let normalized = text
+    .replace(/\\n/g, '\n')           // Escaped newlines from JSON
+    .replace(/\r\n/g, '\n')          // Windows line endings
+    .replace(/\r/g, '\n')            // Old Mac line endings
   
-  // First, remove \n characters from inside LaTeX blocks (between $ markers)
-  // This must be done BEFORE splitting by newlines to preserve LaTeX blocks
-  normalized = normalized.replace(/\$([^$]*)\$/g, (_match, latexContent) => {
-    // Remove all newlines from LaTeX content and replace with spaces
-    const cleanedLatex = latexContent.replace(/\n/g, ' ')
+  // Step 2: Clean up LaTeX expressions BEFORE splitting into lines
+  // Remove newlines and extra whitespace from within $...$ blocks
+  normalized = normalized.replace(/\$([^$]+)\$/g, (_match, latexContent) => {
+    // Remove all types of newlines and collapse whitespace in LaTeX
+    const cleanedLatex = latexContent
+      .replace(/[\n\r]+/g, ' ')      // Replace newlines with space
+      .replace(/\s+/g, ' ')          // Collapse multiple spaces
+      .replace(/\\n/g, ' ')          // Remove any remaining literal \n
+      .trim()                        // Remove leading/trailing space
     return `$${cleanedLatex}$`
   })
   
-  // Now split by newlines for regular text formatting
-  const lines = normalized.split('\n')
+  // Step 3: One more pass to catch any stray escaped newlines
+  normalized = normalized.replace(/\\n/g, '\n')
+  
+  // Step 4: Split into lines for rendering (supports literal "\\n" still lingering)
+  const lines = normalized.split(/\n|\\n/g)
   
   return (
     <>
       {lines.map((line, lineIdx) => {
+        // Skip completely empty lines but render a <br> for spacing
+        if (line.trim() === '') {
+          return <br key={`empty-${lineIdx}`} />
+        }
+        
         // Process each line for math blocks - match $...$ patterns
-        const parts = line.split(/(\$[^$]*\$)/g).filter(part => part !== '')
+        const parts = line.split(/(\$[^$]+\$)/g).filter(part => part !== '')
         
         return (
           <span key={`line-${lineIdx}`} style={{ whiteSpace: 'pre-wrap' }}>
@@ -48,4 +64,6 @@ export function renderText(text: string) {
   )
 }
 
-
+export function renderTextWithMath(text: string) {
+  return renderText(text)
+}

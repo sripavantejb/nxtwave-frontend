@@ -41,7 +41,7 @@ export default function About() {
     {
       icon: FaShieldAlt,
       title: 'Secure Environment',
-      description: 'Fullscreen mode and tab-switch detection ensure a focused, distraction-free quiz experience.'
+      description: 'Fullscreen mode ensures a focused, distraction-free quiz experience.'
     },
     {
       icon: FaLightbulb,
@@ -338,10 +338,6 @@ export default function About() {
             <li style={{ marginBottom: 12 }}>
               <strong>No Going Back:</strong> Once you submit or skip a question, you cannot return to 
               previous questions.
-            </li>
-            <li style={{ marginBottom: 12 }}>
-              <strong>Tab Switching:</strong> Switching tabs or minimizing the browser will result in 
-              warnings. Multiple violations will terminate your quiz.
             </li>
             <li style={{ marginBottom: 12 }}>
               <strong>Fullscreen Mode:</strong> The quiz automatically enters fullscreen mode to minimize 

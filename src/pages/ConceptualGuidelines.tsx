@@ -53,9 +53,6 @@ export default function ConceptualGuidelines() {
             </h3>
             <ul style={{ margin: 0, paddingLeft: 20 }}>
               <li style={{ marginBottom: 10 }}>
-                <strong>Do not switch tabs or minimize the browser window.</strong> You will receive warnings, and your session may be terminated.
-              </li>
-              <li style={{ marginBottom: 10 }}>
                 <strong>Do not use the browser back button</strong> during the session.
               </li>
               <li style={{ marginBottom: 10 }}>
@@ -63,9 +60,6 @@ export default function ConceptualGuidelines() {
               </li>
               <li style={{ marginBottom: 10 }}>
                 The session will automatically enter <strong>fullscreen mode</strong> when you start.
-              </li>
-              <li style={{ marginBottom: 10 }}>
-                You are allowed a maximum of <strong>2 tab switches</strong> before your session is terminated.
               </li>
             </ul>
           </div>

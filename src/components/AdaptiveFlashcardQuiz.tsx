@@ -140,7 +140,8 @@ export default function AdaptiveFlashcardQuiz() {
         const { question: fetchedQuestion } = await fetchSingleQuestion(
           flashcard.topicId,
           rating,
-          recentQuestionIds.current
+          recentQuestionIds.current,
+          flashcard.subTopic
         )
         setQuestion(fetchedQuestion)
         rememberQuestionId(fetchedQuestion.id)

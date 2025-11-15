@@ -52,9 +52,6 @@ export default function Guidelines() {
             </h3>
             <ul style={{ margin: 0, paddingLeft: 20 }}>
               <li style={{ marginBottom: 10 }}>
-                <strong>Do not switch tabs or minimize the browser window.</strong> You will receive warnings, and your exam may be terminated.
-              </li>
-              <li style={{ marginBottom: 10 }}>
                 <strong>Do not use the browser back button</strong> during the quiz.
               </li>
               <li style={{ marginBottom: 10 }}>
@@ -62,9 +59,6 @@ export default function Guidelines() {
               </li>
               <li style={{ marginBottom: 10 }}>
                 The quiz will automatically enter <strong>fullscreen mode</strong> when you start.
-              </li>
-              <li style={{ marginBottom: 10 }}>
-                You are allowed a maximum of <strong>2 tab switches</strong> before your exam is terminated.
               </li>
             </ul>
           </div>

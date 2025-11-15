@@ -117,10 +117,10 @@ function Navbar() {
           {isHomePage ? (
             <a 
               className="nav-link nav-cta" 
-              href="#topics"
+              href="#learn-concepts"
               onClick={(e) => {
                 e.preventDefault()
-                scrollToSection('topics')
+                scrollToSection('learn-concepts')
               }}
             >
               Get Started

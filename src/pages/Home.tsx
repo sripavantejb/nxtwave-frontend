@@ -1,54 +1,8 @@
-import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { FaChartBar, FaArrowRight, FaGraduationCap, FaLightbulb, FaChartLine, FaTrophy, FaBook } from 'react-icons/fa'
-import { BsCurrencyDollar } from 'react-icons/bs'
-import { fetchTopics } from '../api/client'
-import type { Topic } from '../api/client'
-import Loader from '../components/Loader'
-
-// Icon mapping for topics
-const topicIconMap: Record<string, React.ComponentType> = {
-  'profit-loss': FaChartBar,
-  'si-ci': BsCurrencyDollar,
-  'si': BsCurrencyDollar,
-  'ci': BsCurrencyDollar,
-}
-
-// Default icon fallback
-const DefaultIcon = FaBook
-
-// Safe icon renderer component
-function SafeIcon({ icon, topicId }: { icon?: React.ComponentType, topicId: string }) {
-  const IconComponent = icon || topicIconMap[topicId] || DefaultIcon
-  if (!IconComponent || typeof IconComponent !== 'function') {
-    return <DefaultIcon />
-  }
-  return <IconComponent />
-}
+import { FaArrowRight, FaGraduationCap, FaLightbulb, FaChartLine, FaTrophy } from 'react-icons/fa'
+import FlashcardSystem from '../components/FlashcardSystem'
 
 export default function Home() {
-  const [topics, setTopics] = useState<(Topic & { icon?: React.ComponentType })[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetchTopics()
-      .then((fetchedTopics) => {
-        if (fetchedTopics && Array.isArray(fetchedTopics) && fetchedTopics.length > 0) {
-          setTopics(fetchedTopics)
-        } else {
-          setTopics([])
-        }
-        setLoading(false)
-      })
-      .catch((err) => {
-        console.error('Error fetching topics:', err)
-        setError(err.message || 'Failed to load topics')
-        setLoading(false)
-        // Set empty array on error to show fallback message
-        setTopics([])
-      })
-  }, [])
 
   return (
     <div style={{ paddingBottom: 48 }}>
@@ -150,65 +104,6 @@ export default function Home() {
             </div>
           </div>
         </Link>
-      </section>
-      
-      {/* Topics Section Header */}
-      <section id="topics" style={{ scrollMarginTop: '90px' }}>
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <h2 style={{ 
-            fontSize: '32px', 
-            fontWeight: 700, 
-            marginBottom: '12px',
-            color: 'var(--text)'
-          }}>
-            Available Topics
-          </h2>
-          <p style={{ color: 'var(--muted)', fontSize: '16px' }}>
-            Choose a topic and test your knowledge with adaptive quizzes
-          </p>
-        </div>
-
-        <div className="grid" style={{ marginTop: 32 }}>
-        {loading ? (
-          <div className="col-12" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', padding: '40px' }}>
-            <Loader />
-          </div>
-        ) : error ? (
-          <div className="col-12" style={{ textAlign: 'center', padding: '40px' }}>
-            <p style={{ color: 'var(--accent)', fontSize: '16px', marginBottom: '12px' }}>Error loading topics</p>
-            <p style={{ color: 'var(--muted)', fontSize: '14px' }}>{error}</p>
-          </div>
-        ) : topics && topics.length > 0 ? topics.map((topic) => {
-          if (!topic || !topic.id) return null
-          return (
-            <div key={topic.id} className="col-6">
-              <Link to={`/rate/${topic.id}`} style={{ textDecoration: 'none', width: '100%', display: 'flex' }}>
-                <div className="card card-accent">
-                  <div className="topic-icon">
-                    <SafeIcon icon={topic.icon} topicId={topic.id} />
-                  </div>
-                  <h2 className="card-title">{topic.name || 'Untitled Topic'}</h2>
-                  <p className="muted" style={{ 
-                    marginBottom: 20, 
-                    lineHeight: 1.7, 
-                    flexGrow: 1,
-                    fontSize: '15px'
-                  }}>
-                    {topic.description || 'No description available.'}
-                  </p>
-                  <div className="btn" style={{ alignSelf: 'flex-start' }}>
-                    Start Quiz <FaArrowRight style={{ marginLeft: 8, fontSize: '14px' }} />
-                  </div>
-                </div>
-              </Link>
-            </div>
-          )
-        }) : (
-          <div className="col-12" style={{ textAlign: 'center', padding: '40px' }}>
-            <p style={{ color: 'var(--muted)', fontSize: '16px' }}>No topics available at the moment.</p>
-          </div>
-        )}
-        </div>
       </section>
 
       {/* About Section */}
@@ -406,6 +301,89 @@ export default function Home() {
             our platform adjusts to your level and helps you progress at your own pace. Start your journey 
             today and discover a smarter way to learn mathematics.
           </p>
+        </div>
+      </section>
+
+      {/* Flashcard Learning Section */}
+      <section id="flashcard-learning" style={{ marginTop: 48, marginBottom: 48, scrollMarginTop: '90px' }}>
+        <div style={{
+          background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+          padding: '48px 40px',
+          borderRadius: '20px',
+          border: '2px solid rgba(153,27,27,0.1)',
+          boxShadow: '0 10px 40px rgba(0,0,0,0.05)'
+        }}>
+          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+            <h2 style={{
+              fontSize: '32px',
+              fontWeight: 800,
+              marginBottom: '12px',
+              color: 'var(--text)',
+              letterSpacing: '-0.02em'
+            }}>
+              🎯 Adaptive Flashcard Learning
+            </h2>
+            <p style={{
+              fontSize: '16px',
+              color: 'var(--text-light)',
+              maxWidth: '700px',
+              margin: '0 auto',
+              lineHeight: 1.6
+            }}>
+              Master concepts with our intelligent flashcard system featuring spaced repetition and adaptive follow-up questions
+            </p>
+          </div>
+
+          <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+            <FlashcardSystem />
+          </div>
+
+          <div style={{ marginTop: '32px', textAlign: 'center' }}>
+            <div style={{
+              display: 'inline-grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '16px',
+              maxWidth: '800px',
+              width: '100%'
+            }}>
+              <div style={{
+                background: 'rgba(153,27,27,0.05)',
+                padding: '16px',
+                borderRadius: '12px',
+                border: '1px solid rgba(153,27,27,0.1)'
+              }}>
+                <div style={{ fontSize: '24px', marginBottom: '8px' }}>⏱️</div>
+                <div style={{ fontWeight: 600, fontSize: '14px' }}>30-Second Timer</div>
+              </div>
+              <div style={{
+                background: 'rgba(153,27,27,0.05)',
+                padding: '16px',
+                borderRadius: '12px',
+                border: '1px solid rgba(153,27,27,0.1)'
+              }}>
+                <div style={{ fontSize: '24px', marginBottom: '8px' }}>⭐</div>
+                <div style={{ fontWeight: 600, fontSize: '14px' }}>Self-Rating System</div>
+              </div>
+              <div style={{
+                background: 'rgba(153,27,27,0.05)',
+                padding: '16px',
+                borderRadius: '12px',
+                border: '1px solid rgba(153,27,27,0.1)'
+              }}>
+                <div style={{ fontSize: '24px', marginBottom: '8px' }}>🎲</div>
+                <div style={{ fontWeight: 600, fontSize: '14px' }}>Adaptive Questions</div>
+              </div>
+              <div style={{
+                background: 'rgba(153,27,27,0.05)',
+                padding: '16px',
+                borderRadius: '12px',
+                border: '1px solid rgba(153,27,27,0.1)'
+              }}>
+                <div style={{ fontSize: '24px', marginBottom: '8px' }}>📅</div>
+                <div style={{ fontWeight: 600, fontSize: '14px' }}>Spaced Repetition</div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     </div>

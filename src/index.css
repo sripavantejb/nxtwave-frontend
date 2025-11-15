@@ -1429,3 +1429,32 @@ a {
     padding: 24px;
   }
 }
+
+/* Flashcard System Styles */
+.flashcard-system {
+  width: 100%;
+}
+
+.flashcard-card,
+.followup-question,
+.submit-result {
+  background: white;
+  padding: 32px;
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  border: 1px solid rgba(153, 27, 27, 0.08);
+  transition: var(--transition);
+}
+
+.flashcard-card:hover,
+.followup-question:hover {
+  box-shadow: var(--card-shadow-hover);
+}
+
+@media (max-width: 768px) {
+  .flashcard-card,
+  .followup-question,
+  .submit-result {
+    padding: 24px 20px;
+  }
+}
