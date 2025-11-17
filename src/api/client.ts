@@ -501,9 +501,10 @@ export async function completeBatch(token: string, timestamp: number): Promise<{
   try {
     return await request<{ success: boolean, message?: string }>(
       '/api/flashcards/complete-batch',
-      { timestamp },
+      undefined,
       {
         method: 'POST',
+        body: JSON.stringify({ timestamp }),
         token
       }
     )
