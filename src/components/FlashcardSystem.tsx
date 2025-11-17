@@ -332,6 +332,26 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     initSession()
   }, [navigate, restoreFlashcardProgress])
 
+  // Helper function to calculate and set cooldown timer
+  const calculateCooldownTimer = useCallback((completionTime: number) => {
+    const targetTime = completionTime + (5 * 60 * 1000) // 5 minutes
+    const now = Date.now()
+    const remaining = targetTime - now
+    
+    if (remaining > 0) {
+      // Timer still active
+      const totalSeconds = Math.floor(remaining / 1000)
+      const minutes = Math.floor(totalSeconds / 60)
+      const seconds = totalSeconds % 60
+      setCooldownTimeRemaining(`${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`)
+      setCooldownTimerActive(true)
+    } else {
+      // Timer completed
+      setCooldownTimeRemaining('00:00')
+      setCooldownTimerActive(false)
+    }
+  }, [])
+
   // Initialize cooldown timer on mount if batchCompletionTime exists
   useEffect(() => {
     const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
@@ -341,25 +361,10 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     if (batchCompletionTimeStr) {
       const completionTime = parseInt(batchCompletionTimeStr, 10)
       if (!isNaN(completionTime)) {
-        const targetTime = completionTime + (5 * 60 * 1000)
-        const now = Date.now()
-        const remaining = targetTime - now
-        
-        if (remaining > 0) {
-          // Timer still active
-          const totalSeconds = Math.floor(remaining / 1000)
-          const minutes = Math.floor(totalSeconds / 60)
-          const seconds = totalSeconds % 60
-          setCooldownTimeRemaining(`${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`)
-          setCooldownTimerActive(true)
-        } else {
-          // Timer completed
-          setCooldownTimeRemaining('00:00')
-          setCooldownTimerActive(false)
-        }
+        calculateCooldownTimer(completionTime)
       }
     }
-  }, []) // Run once on mount
+  }, [calculateCooldownTimer]) // Run once on mount
 
   // Cooldown timer effect (5 minutes after batch completion) - syncs with server
   useEffect(() => {
@@ -383,42 +388,35 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         }
       } catch (err) {
         // Fallback to localStorage if server call fails
-      const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
-      const hasCompletionTime = batchCompletionTimeStr !== null
-      setHasBatchCompletionTime(hasCompletionTime)
-      
-      if (!batchCompletionTimeStr) {
-        setCooldownTimerActive(false)
-        setCooldownTimeRemaining('00:00')
-        return
-      }
+        const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
+        const hasCompletionTime = batchCompletionTimeStr !== null
+        setHasBatchCompletionTime(hasCompletionTime)
+        
+        if (!batchCompletionTimeStr) {
+          setCooldownTimerActive(false)
+          setCooldownTimeRemaining('00:00')
+          return
+        }
 
-      const completionTime = parseInt(batchCompletionTimeStr, 10)
-      if (isNaN(completionTime)) {
-        setCooldownTimerActive(false)
-        setCooldownTimeRemaining('00:00')
-        return
-      }
+        const completionTime = parseInt(batchCompletionTimeStr, 10)
+        if (isNaN(completionTime)) {
+          setCooldownTimerActive(false)
+          setCooldownTimeRemaining('00:00')
+          return
+        }
 
+        // Use helper function to calculate timer
+        calculateCooldownTimer(completionTime)
+        
+        // Check if timer expired and auto-load new batch
         const targetTime = completionTime + (5 * 60 * 1000)
         const now = Date.now()
         const remaining = targetTime - now
-
-        if (remaining <= 0) {
-          setCooldownTimeRemaining('00:00')
-          setCooldownTimerActive(false)
-          // Automatically load new batch when timer expires
-          if (showContinuePrompt && handleStartNewBatchRef.current) {
-            handleStartNewBatchRef.current().catch(err => {
-              console.error('Error auto-loading new batch:', err)
-            })
-          }
-        } else {
-          const totalSeconds = Math.max(0, Math.floor(remaining / 1000))
-          const minutes = Math.floor(totalSeconds / 60)
-          const seconds = totalSeconds % 60
-          setCooldownTimeRemaining(`${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`)
-          setCooldownTimerActive(true)
+        
+        if (remaining <= 0 && showContinuePrompt && handleStartNewBatchRef.current) {
+          handleStartNewBatchRef.current().catch(err => {
+            console.error('Error auto-loading new batch:', err)
+          })
         }
       }
     }
@@ -451,25 +449,18 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         return
       }
 
+      // Use helper function to calculate timer
+      calculateCooldownTimer(completionTime)
+      
+      // Check if timer expired and auto-load new batch
       const targetTime = completionTime + (5 * 60 * 1000)
       const now = Date.now()
       const remaining = targetTime - now
-
-      if (remaining <= 0) {
-        setCooldownTimeRemaining('00:00')
-        setCooldownTimerActive(false)
-        // Automatically load new batch when timer expires
-        if (showContinuePrompt && handleStartNewBatchRef.current) {
-          handleStartNewBatchRef.current().catch(err => {
-            console.error('Error auto-loading new batch:', err)
-          })
-        }
-      } else {
-        const totalSeconds = Math.max(0, Math.floor(remaining / 1000))
-        const minutes = Math.floor(totalSeconds / 60)
-        const seconds = totalSeconds % 60
-        setCooldownTimeRemaining(`${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`)
-        setCooldownTimerActive(true)
+      
+      if (remaining <= 0 && showContinuePrompt && handleStartNewBatchRef.current) {
+        handleStartNewBatchRef.current().catch(err => {
+          console.error('Error auto-loading new batch:', err)
+        })
       }
     }, 1000)
 
@@ -482,7 +473,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         cooldownTimerIntervalRef.current = null
       }
     }
-  }, [showContinuePrompt]) // Re-run when showContinuePrompt changes
+  }, [showContinuePrompt, calculateCooldownTimer]) // Re-run when showContinuePrompt changes
 
   // Handler for starting new batch
   const handleStartNewBatch = useCallback(async () => {
@@ -1024,6 +1015,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         localStorage.setItem('batchCompletionTime', completionTime.toString())
         setHasBatchCompletionTime(true)
         
+        // Immediately calculate and set the timer
+        calculateCooldownTimer(completionTime)
+        
         // Store batch completion time on backend
         const token = getAuthToken()
         if (token) {
@@ -1092,6 +1086,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
                   localStorage.setItem('hasAttemptedFlashcard', 'true')
                   localStorage.setItem('batchCompletionTime', completionTime.toString())
                   setHasBatchCompletionTime(true)
+                  calculateCooldownTimer(completionTime)
                   const token = getAuthToken()
                   if (token) {
                     completeBatch(token, completionTime).catch(err => {
@@ -1192,6 +1187,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         localStorage.setItem('hasAttemptedFlashcard', 'true')
         localStorage.setItem('batchCompletionTime', completionTime.toString())
         setHasBatchCompletionTime(true)
+        
+        // Immediately calculate and set the timer
+        calculateCooldownTimer(completionTime)
         
         // Store batch completion time on backend
         const token = getAuthToken()
@@ -1379,7 +1377,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   return (
     <div className={`flashcard-system ${className}`}>
       {/* Cooldown Timer - Display at top when batch is completed OR during active session */}
-      {(showContinuePrompt || (cooldownTimerActive && hasBatchCompletionTime)) && (
+      {(showContinuePrompt || cooldownTimerActive) && (
         <div style={{
           marginBottom: '20px',
           padding: '16px',
