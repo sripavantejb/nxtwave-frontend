@@ -13,6 +13,8 @@ import {
   resetShownFlashcards,
   completeBatch,
   createNewBatch,
+  getBatch,
+  getUserCooldown,
   type FlashcardData,
   type FollowUpQuestion,
   type SubmitResult
@@ -71,6 +73,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   const [cooldownTimeRemaining, setCooldownTimeRemaining] = useState<string>('00:00')
   const [cooldownTimerActive, setCooldownTimerActive] = useState(false)
   const cooldownTimerIntervalRef = useRef<number | null>(null)
+  // Batch management state
+  const [batchFlashcards, setBatchFlashcards] = useState<FlashcardData[]>([])
+  const [currentBatchIndex, setCurrentBatchIndex] = useState(0)
   
   // Refs to store current values for timer callback
   const currentFlashcardRef = useRef<FlashcardData | null>(null)
@@ -352,74 +357,98 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     }
   }, []) // Run once on mount
 
-  // Cooldown timer effect (5 minutes after batch completion)
+  // Cooldown timer effect (5 minutes after batch completion) - syncs with server
   useEffect(() => {
-    // Check for existing batch completion time from localStorage
-    const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
-    
-    if (!batchCompletionTimeStr) {
-      // No batch completion time, timer should not be active
-      setCooldownTimerActive(false)
-      setCooldownTimeRemaining('00:00')
-      if (cooldownTimerIntervalRef.current !== null) {
-        clearInterval(cooldownTimerIntervalRef.current)
-        cooldownTimerIntervalRef.current = null
-      }
-      return
-    }
-
-    const completionTime = parseInt(batchCompletionTimeStr, 10)
-    if (isNaN(completionTime)) {
-      setCooldownTimerActive(false)
-      setCooldownTimeRemaining('00:00')
-      return
-    }
-
-    // Calculate target time: completion time + 5 minutes
-    const targetTime = completionTime + (5 * 60 * 1000)
-
-    const calculateTimeString = (remainingMs: number): string => {
-      const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000))
-      const minutes = Math.floor(totalSeconds / 60)
-      const seconds = totalSeconds % 60
-      return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-    }
-
-    const updateTimer = () => {
-      const now = Date.now()
-      const remaining = targetTime - now
-
-      if (remaining <= 0) {
-        // Timer completed - keep showing 00:00 until user starts new batch
-        setCooldownTimeRemaining('00:00')
+    const updateCooldownFromServer = async () => {
+      const token = getAuthToken()
+      if (!token) {
         setCooldownTimerActive(false)
-        if (cooldownTimerIntervalRef.current !== null) {
-          clearInterval(cooldownTimerIntervalRef.current)
-          cooldownTimerIntervalRef.current = null
+        setCooldownTimeRemaining('00:00')
+        return
+      }
+
+      try {
+        const cooldownStatus = await getUserCooldown(token)
+        setCooldownTimeRemaining(cooldownStatus.remainingTime)
+        setCooldownTimerActive(!cooldownStatus.canStart)
+      } catch (err) {
+        // Fallback to localStorage if server call fails
+        const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
+        if (!batchCompletionTimeStr) {
+          setCooldownTimerActive(false)
+          setCooldownTimeRemaining('00:00')
+          return
         }
-      } else {
-        // Timer still active
-        setCooldownTimeRemaining(calculateTimeString(remaining))
-        setCooldownTimerActive(true)
+
+        const completionTime = parseInt(batchCompletionTimeStr, 10)
+        if (isNaN(completionTime)) {
+          setCooldownTimerActive(false)
+          setCooldownTimeRemaining('00:00')
+          return
+        }
+
+        const targetTime = completionTime + (5 * 60 * 1000)
+        const now = Date.now()
+        const remaining = targetTime - now
+
+        if (remaining <= 0) {
+          setCooldownTimeRemaining('00:00')
+          setCooldownTimerActive(false)
+        } else {
+          const totalSeconds = Math.max(0, Math.floor(remaining / 1000))
+          const minutes = Math.floor(totalSeconds / 60)
+          const seconds = totalSeconds % 60
+          setCooldownTimeRemaining(`${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`)
+          setCooldownTimerActive(true)
+        }
       }
     }
 
     // Initial update
-    updateTimer()
+    updateCooldownFromServer()
 
-    // Set up interval to update every second (only if timer is still active)
-    if (cooldownTimerIntervalRef.current !== null) {
-      clearInterval(cooldownTimerIntervalRef.current)
-    }
-    
-    const now = Date.now()
-    const remaining = targetTime - now
-    if (remaining > 0) {
-      cooldownTimerIntervalRef.current = window.setInterval(updateTimer, 1000)
-    }
+    // Set up interval to sync with server every 10 seconds
+    const syncInterval = window.setInterval(updateCooldownFromServer, 10000)
+
+    // Also set up local timer for smooth countdown
+    const localTimerInterval = window.setInterval(() => {
+      const token = getAuthToken()
+      if (!token) return
+
+      const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
+      if (!batchCompletionTimeStr) {
+        setCooldownTimerActive(false)
+        setCooldownTimeRemaining('00:00')
+        return
+      }
+
+      const completionTime = parseInt(batchCompletionTimeStr, 10)
+      if (isNaN(completionTime)) {
+        setCooldownTimerActive(false)
+        setCooldownTimeRemaining('00:00')
+        return
+      }
+
+      const targetTime = completionTime + (5 * 60 * 1000)
+      const now = Date.now()
+      const remaining = targetTime - now
+
+      if (remaining <= 0) {
+        setCooldownTimeRemaining('00:00')
+        setCooldownTimerActive(false)
+      } else {
+        const totalSeconds = Math.max(0, Math.floor(remaining / 1000))
+        const minutes = Math.floor(totalSeconds / 60)
+        const seconds = totalSeconds % 60
+        setCooldownTimeRemaining(`${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`)
+        setCooldownTimerActive(true)
+      }
+    }, 1000)
 
     // Cleanup
     return () => {
+      clearInterval(syncInterval)
+      clearInterval(localTimerInterval)
       if (cooldownTimerIntervalRef.current !== null) {
         clearInterval(cooldownTimerIntervalRef.current)
         cooldownTimerIntervalRef.current = null
@@ -429,11 +458,6 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
 
   // Handler for starting new batch
   const handleStartNewBatch = async () => {
-    // Only allow if timer has completed (00:00)
-    if (cooldownTimeRemaining !== '00:00') {
-      return
-    }
-
     const token = getAuthToken()
     if (!token) {
       navigate('/login')
@@ -444,9 +468,26 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     setError(null)
 
     try {
-      // Create new batch via API
-      const newSession = await createNewBatch(token)
-      setSessionSubtopics(newSession.sessionSubtopics)
+      // Check server-side cooldown first
+      const cooldownStatus = await getUserCooldown(token)
+      
+      if (!cooldownStatus.canStart) {
+        // Cooldown still active - update timer and show error
+        setCooldownTimeRemaining(cooldownStatus.remainingTime)
+        setCooldownTimerActive(true)
+        setError(`Please wait ${cooldownStatus.remainingTime} before starting a new batch`)
+        setLoading(false)
+        return
+      }
+      
+      // Cooldown expired - get new batch
+      const batchResponse = await getBatch(token)
+      setBatchFlashcards(batchResponse.flashcards)
+      setCurrentBatchIndex(0)
+      
+      // Extract subtopics from batch for backward compatibility
+      const subtopics = Array.from(new Set(batchResponse.flashcards.map(f => f.subTopic)))
+      setSessionSubtopics(subtopics)
       
       // Reset all state for new batch
       setFlashcardCount(0)
@@ -489,7 +530,16 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       
       setLoading(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create new batch')
+      const error = err as Error & { status?: number; remainingTime?: string; remainingSeconds?: number; canStart?: boolean }
+      // Handle cooldown error (429) - check if error message contains cooldown info
+      if (error.status === 429 || error.remainingTime) {
+        const remainingTime = error.remainingTime || '00:00'
+        setCooldownTimeRemaining(remainingTime)
+        setCooldownTimerActive(true)
+        setError(`Please wait ${remainingTime} before starting a new batch`)
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to create new batch')
+      }
       setLoading(false)
     }
   }
@@ -533,6 +583,16 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     }
 
     try {
+      // Priority 0: Check if we have batch flashcards loaded
+      if (batchFlashcards.length > 0 && currentBatchIndex < batchFlashcards.length) {
+        const flashcard = batchFlashcards[currentBatchIndex]
+        setCurrentFlashcard(flashcard)
+        setCurrentBatchIndex(currentBatchIndex + 1)
+        setSubmitResult(null)
+        setLoading(false)
+        return
+      }
+      
       // Priority 1: Check for due reviews
       try {
         const dueQuestion = await getNextQuestion(token)
@@ -720,7 +780,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     } finally {
       setLoading(false)
     }
-  }, [navigate, flashcardCount, isNewSession])
+  }, [navigate, flashcardCount, isNewSession, batchFlashcards, currentBatchIndex])
 
   // Listen for new batch start event after day shift
   useEffect(() => {
@@ -915,8 +975,25 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       if (newCount >= 6) {
         setShowContinuePrompt(true)
         // Start day shift timer after completing batch of 6 flashcards
+        const completionTime = Date.now()
         localStorage.setItem('hasAttemptedFlashcard', 'true')
-        localStorage.setItem('batchCompletionTime', Date.now().toString())
+        localStorage.setItem('batchCompletionTime', completionTime.toString())
+        
+        // Store batch completion time on backend
+        const token = getAuthToken()
+        if (token) {
+          try {
+            await completeBatch(token, completionTime)
+          } catch (err) {
+            // Silently fail - backend might not be available, but frontend timer will still work
+            console.error('Error storing batch completion time:', err)
+          }
+        }
+        
+        // Clear batch flashcards state
+        setBatchFlashcards([])
+        setCurrentBatchIndex(0)
+        
         // Dispatch custom event to notify Navbar immediately
         window.dispatchEvent(new Event('flashcardAttempted'))
         // Clear follow-up question state - result will be shown, user can view summary
@@ -966,6 +1043,17 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
                 setFlashcardCount(newCount)
                 if (newCount >= 6) {
                   setShowContinuePrompt(true)
+                  const completionTime = Date.now()
+                  localStorage.setItem('hasAttemptedFlashcard', 'true')
+                  localStorage.setItem('batchCompletionTime', completionTime.toString())
+                  const token = getAuthToken()
+                  if (token) {
+                    completeBatch(token, completionTime).catch(err => {
+                      console.error('Error storing batch completion time:', err)
+                    })
+                  }
+                  setBatchFlashcards([])
+                  setCurrentBatchIndex(0)
                 } else {
                   setFollowUpQuestion(null)
                   setSelectedOption(null)
@@ -1068,6 +1156,10 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
             console.error('Error storing batch completion time:', err)
           }
         }
+        
+        // Clear batch flashcards state
+        setBatchFlashcards([])
+        setCurrentBatchIndex(0)
         
         // Dispatch custom event to notify Navbar immediately
         window.dispatchEvent(new Event('flashcardAttempted'))

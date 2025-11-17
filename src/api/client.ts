@@ -91,9 +91,19 @@ async function request<T>(
     if (!res.ok) {
       const maybeJson = await res.json().catch(() => ({}))
       const message = (maybeJson as any).error || (maybeJson as any).message || `Request failed (${res.status})`
-      const error = new Error(message) as Error & { requiresSession?: boolean; status?: number }
+      const error = new Error(message) as Error & { requiresSession?: boolean; status?: number; remainingTime?: string; remainingSeconds?: number; canStart?: boolean }
       error.requiresSession = (maybeJson as any).requiresSession || false
       error.status = res.status
+      // Include cooldown data if present
+      if ((maybeJson as any).remainingTime !== undefined) {
+        error.remainingTime = (maybeJson as any).remainingTime
+      }
+      if ((maybeJson as any).remainingSeconds !== undefined) {
+        error.remainingSeconds = (maybeJson as any).remainingSeconds
+      }
+      if ((maybeJson as any).canStart !== undefined) {
+        error.canStart = (maybeJson as any).canStart
+      }
       throw error
     }
     return res.json() as Promise<T>
@@ -554,6 +564,32 @@ export async function createNewBatch(token: string): Promise<SessionResponse & {
     // Re-throw other errors as-is
     throw err
   }
+}
+
+/**
+ * Get a new batch of exactly 6 flashcards
+ * Requires JWT authentication
+ * Returns array of flashcard data
+ */
+export async function getBatch(token: string): Promise<{ flashcards: FlashcardData[], batchSize: number }> {
+  return request<{ flashcards: FlashcardData[], batchSize: number }>(
+    '/api/flashcards/get-batch',
+    undefined,
+    { token }
+  )
+}
+
+/**
+ * Get user cooldown status
+ * Requires JWT authentication
+ * Returns cooldown information
+ */
+export async function getUserCooldown(token: string): Promise<{ canStart: boolean, remainingSeconds: number, remainingTime: string }> {
+  return request<{ canStart: boolean, remainingSeconds: number, remainingTime: string }>(
+    '/api/flashcards/get-cooldown',
+    undefined,
+    { token }
+  )
 }
 
 
