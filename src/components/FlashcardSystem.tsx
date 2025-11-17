@@ -12,7 +12,6 @@ import {
   startFlashcardSession,
   resetShownFlashcards,
   completeBatch,
-  createNewBatch,
   getBatch,
   getUserCooldown,
   type FlashcardData,
