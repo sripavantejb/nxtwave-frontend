@@ -79,6 +79,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         setSessionSubtopics(session.sessionSubtopics)
         // Reset flashcard count for new session
         setFlashcardCount(0)
+        setCompletedSubtopics([]) // Reset completed subtopics for new session
         setShowContinuePrompt(false)
         // Reset score counters and results for new session
         setCorrectCount(0)
@@ -161,9 +162,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         try {
           const newSession = await startFlashcardSession(token, true) // Force new session
           setSessionSubtopics(newSession.sessionSubtopics)
-          setCompletedSubtopics([])
-          // Reset flashcard count for new session
-          setFlashcardCount(0)
+          setCompletedSubtopics([]) // Reset completed subtopics
+          setFlashcardCount(0) // Reset flashcard count
           setShowContinuePrompt(false)
           // Reset score counters and results for new session
           setCorrectCount(0)
@@ -263,8 +263,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           if (token) {
             const session = await startFlashcardSession(token)
             setSessionSubtopics(session.sessionSubtopics)
-            // Reset flashcard count for new session
-            setFlashcardCount(0)
+            setCompletedSubtopics([]) // Reset completed subtopics
+            setFlashcardCount(0) // Reset flashcard count
             setShowContinuePrompt(false)
             // Reset score counters and results for new session
             setCorrectCount(0)
@@ -327,8 +327,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           }
           const session = await startFlashcardSession(token, true) // Force new session
           setSessionSubtopics(session.sessionSubtopics)
-          // Reset flashcard count for new session
-          setFlashcardCount(0)
+          setCompletedSubtopics([]) // Reset completed subtopics
+          setFlashcardCount(0) // Reset flashcard count
           setShowContinuePrompt(false)
           // Reset score counters and results for new session
           setCorrectCount(0)
@@ -702,7 +702,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           textAlign: 'center'
         }}>
           <p style={{ fontSize: '14px', color: '#0369a1', margin: 0 }}>
-            Session Progress: {completedSubtopics.length} / {sessionSubtopics.length} subtopics completed
+            Session Progress: {flashcardCount} / 6 flashcards completed
           </p>
         </div>
       )}
