@@ -115,3 +115,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
+// Helper function to get JWT token from localStorage
+export function getAuthToken(): string | null {
+  return localStorage.getItem('authToken') || localStorage.getItem('token') || null
+}
+

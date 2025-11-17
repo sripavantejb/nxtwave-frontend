@@ -105,7 +105,7 @@ export default function Home() {
 
     try {
       // Create new batch via API
-      const result = await createNewBatch(token)
+      await createNewBatch(token)
       setShowNewBatchNotification(false)
       setNewBatchMessage('')
       
