@@ -343,7 +343,6 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     setDifficulty(null)
     setFollowUpQuestion(null)
     setSelectedOption(null)
-    setSubmitResult(null)
     setTimeLeft(30)
     setTimerActive(true)
     setTimerStartTime(Date.now())
@@ -367,6 +366,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         if (dueQuestion && 'flashcard' in dueQuestion) {
           console.log('Loaded flashcard from due reviews:', dueQuestion)
           setCurrentFlashcard(dueQuestion as FlashcardData)
+          setSubmitResult(null) // Clear previous result now that new flashcard is loaded
           setLoading(false)
           return
         }
@@ -413,11 +413,13 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
               
               if ('flashcard' in retryData) {
                 setCurrentFlashcard(retryData as FlashcardData)
+                setSubmitResult(null) // Clear previous result now that new flashcard is loaded
               } else {
                 // Last resort: try one more time
                 const finalData = await fetchRandomFlashcardJson(token)
                 if ('flashcard' in finalData) {
                   setCurrentFlashcard(finalData as FlashcardData)
+                  setSubmitResult(null) // Clear previous result now that new flashcard is loaded
                 } else {
                   // Silently continue - backend should handle retries
                   // Don't log as error since this is handled gracefully
@@ -429,6 +431,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
             }
           } else if ('flashcard' in newData) {
             setCurrentFlashcard(newData as FlashcardData)
+            setSubmitResult(null) // Clear previous result now that new flashcard is loaded
           } else {
             // Try one more time without showing error
             try {
@@ -440,6 +443,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
               const retryData = await fetchRandomFlashcardJson(token)
               if ('flashcard' in retryData) {
                 setCurrentFlashcard(retryData as FlashcardData)
+                setSubmitResult(null) // Clear previous result now that new flashcard is loaded
               }
             } catch (err) {
               console.error('Error loading flashcard:', err)
@@ -452,6 +456,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
             const fallbackData = await fetchRandomFlashcardJson(token)
             if ('flashcard' in fallbackData) {
               setCurrentFlashcard(fallbackData as FlashcardData)
+              setSubmitResult(null) // Clear previous result now that new flashcard is loaded
             }
           } catch (fallbackErr) {
             console.error('Error in fallback flashcard load:', fallbackErr)
@@ -459,6 +464,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         }
       } else if ('flashcard' in data) {
         setCurrentFlashcard(data as FlashcardData)
+        setSubmitResult(null) // Clear previous result now that new flashcard is loaded
       } else {
         // Try to reset and fetch again instead of showing error
         try {
@@ -470,6 +476,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           const retryData = await fetchRandomFlashcardJson(token)
           if ('flashcard' in retryData) {
             setCurrentFlashcard(retryData as FlashcardData)
+            setSubmitResult(null) // Clear previous result now that new flashcard is loaded
           } else {
             console.error('No flashcards available after reset')
           }
@@ -501,6 +508,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
             const retryData = await fetchRandomFlashcardJson(token)
             if (retryData && 'flashcard' in retryData) {
               setCurrentFlashcard(retryData as FlashcardData)
+              setSubmitResult(null) // Clear previous result now that new flashcard is loaded
               setLoading(false)
               return
             } else if (retryData && 'allCompleted' in retryData && retryData.allCompleted) {
@@ -520,6 +528,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
               const newData = await fetchRandomFlashcardJson(token)
               if (newData && 'flashcard' in newData) {
                 setCurrentFlashcard(newData as FlashcardData)
+                setSubmitResult(null) // Clear previous result now that new flashcard is loaded
                 setLoading(false)
                 return
               }
@@ -721,6 +730,14 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       const newCount = currentFlashcardCount + 1
       setFlashcardCount(newCount)
 
+      // Create a result object for display purposes (timeout case - always incorrect)
+      const timeoutResult = {
+        correct: false,
+        correctAnswer: `Option ${correctAnswerKey}`,
+        explanation: currentFollowUp.explanation || 'Time ran out. No answer was submitted.'
+      }
+      setSubmitResult(timeoutResult)
+
       // If we've completed 6 flashcards, show continue prompt and start day shift timer
       if (newCount >= 6) {
         setShowContinuePrompt(true)
@@ -729,23 +746,16 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         localStorage.setItem('batchCompletionTime', Date.now().toString())
         // Dispatch custom event to notify Navbar immediately
         window.dispatchEvent(new Event('flashcardAttempted'))
-        // Create a result object for display purposes
-        setSubmitResult({
-          correct: false,
-          correctAnswer: `Option ${correctAnswerKey}`,
-          explanation: currentFollowUp.explanation || 'Time ran out. No answer was submitted.'
-        })
-        // Clear follow-up question state
+        // Clear follow-up question state - result will be shown, user can view summary
         setFollowUpQuestion(null)
         setSelectedOption(null)
-      } else {
-        // Move directly to next flashcard without showing result
-        // Reset states and load next flashcard
-        setFollowUpQuestion(null)
-        setSelectedOption(null)
-        setSubmitResult(null)
         setError(null)
-        await loadFlashcard()
+      } else {
+        // Clear follow-up question state - result will be shown, user clicks "Next Flashcard" to proceed
+        setFollowUpQuestion(null)
+        setSelectedOption(null)
+        setError(null)
+        // Don't automatically load next flashcard - wait for user to click "Next Flashcard" button
       }
     } catch (err) {
       console.error('Error in auto submit:', err)
@@ -888,16 +898,19 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         
         // Dispatch custom event to notify Navbar immediately
         window.dispatchEvent(new Event('flashcardAttempted'))
+        // Clear follow-up question state - result will be shown, user can view summary
+        setFollowUpQuestion(null)
+        setSelectedOption(null)
+        setError(null)
         // Don't load next flashcard - session is complete
         return
       }
       
-      // Move to next flashcard if not at limit
+      // Clear follow-up question state - result will be shown, user clicks "Next Flashcard" to proceed
       setFollowUpQuestion(null)
       setSelectedOption(null)
-      setSubmitResult(null)
       setError(null)
-      await loadFlashcard()
+      // Don't automatically load next flashcard - wait for user to click "Next Flashcard" button
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit answer')
     } finally {
@@ -910,9 +923,16 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     if (showContinuePrompt) {
       return
     }
+    // Clear result state and reset all necessary states before loading next flashcard
+    setSubmitResult(null)
+    setFollowUpQuestion(null)
+    setSelectedOption(null)
+    setError(null)
     // Reset follow-up timer state
     setFollowUpTimer(60)
     setFollowUpTimerActive(false)
+    setFollowUpTimerStartTime(null)
+    // Load next flashcard
     loadFlashcard()
   }
 
@@ -1371,8 +1391,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         </div>
       )}
 
-      {/* All Completed Questions with Explanations */}
-      {flashcardResults.length > 0 && !showContinuePrompt && (
+      {/* All Completed Questions with Explanations - Only show after all 6 cards are completed */}
+      {flashcardResults.length > 0 && showContinuePrompt && (
         <div style={{
           marginTop: '32px',
           marginBottom: '32px',
