@@ -11,6 +11,7 @@ import {
   getNextQuestion,
   startFlashcardSession,
   resetShownFlashcards,
+  completeBatch,
   type FlashcardData,
   type FollowUpQuestion,
   type SubmitResult
@@ -870,8 +871,21 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       if (newCount >= 6) {
         setShowContinuePrompt(true)
         // Start day shift timer after completing batch of 6 flashcards
+        const completionTime = Date.now()
         localStorage.setItem('hasAttemptedFlashcard', 'true')
-        localStorage.setItem('batchCompletionTime', Date.now().toString())
+        localStorage.setItem('batchCompletionTime', completionTime.toString())
+        
+        // Store batch completion time on backend
+        const token = getAuthToken()
+        if (token) {
+          try {
+            await completeBatch(token, completionTime)
+          } catch (err) {
+            // Silently fail - backend might not be available, but frontend timer will still work
+            console.error('Error storing batch completion time:', err)
+          }
+        }
+        
         // Dispatch custom event to notify Navbar immediately
         window.dispatchEvent(new Event('flashcardAttempted'))
         // Don't load next flashcard - session is complete
@@ -1294,8 +1308,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         </div>
       )}
 
-      {/* Submit Result */}
-      {submitResult && !showContinuePrompt && (
+      {/* Submit Result - Always show immediately after submission, even for correct answers */}
+      {submitResult && (
         <div className="submit-result">
           <div style={{ 
             textAlign: 'center', 
@@ -1328,16 +1342,32 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
             <h4 style={{ marginBottom: '12px', fontSize: '16px', fontWeight: 600 }}>
               Explanation:
             </h4>
-            {renderText(submitResult.explanation)}
+            {renderText(submitResult.explanation || 'No explanation available.')}
           </div>
 
-          <button
-            className="btn"
-            onClick={handleNextFlashcard}
-            style={{ width: '100%' }}
-          >
-            Next Flashcard
-          </button>
+          {showContinuePrompt ? (
+            <button
+              className="btn"
+              onClick={() => {
+                // Scroll to summary section
+                const summaryElement = document.querySelector('.continue-prompt')
+                if (summaryElement) {
+                  summaryElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
+              }}
+              style={{ width: '100%' }}
+            >
+              View Session Summary
+            </button>
+          ) : (
+            <button
+              className="btn"
+              onClick={handleNextFlashcard}
+              style={{ width: '100%' }}
+            >
+              Next Flashcard
+            </button>
+          )}
         </div>
       )}
 
@@ -1611,7 +1641,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
                           Explanation:
                         </h5>
                         <div style={{ fontSize: '14px', lineHeight: 1.6 }}>
-                          {renderText(result.explanation)}
+                          {renderText(result.explanation || 'No explanation available.')}
                         </div>
                       </div>
                     </div>

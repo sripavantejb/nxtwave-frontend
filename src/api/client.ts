@@ -491,6 +491,43 @@ export async function checkNewBatch(token: string): Promise<{ available: boolean
 }
 
 /**
+ * Store batch completion time when a batch of 6 flashcards is completed
+ * Requires JWT authentication
+ * @param token - JWT authentication token
+ * @param timestamp - Timestamp in milliseconds since epoch
+ * @returns Promise with success status
+ */
+export async function completeBatch(token: string, timestamp: number): Promise<{ success: boolean, message?: string }> {
+  try {
+    return await request<{ success: boolean, message?: string }>(
+      '/api/flashcards/complete-batch',
+      { timestamp },
+      {
+        method: 'POST',
+        token
+      }
+    )
+  } catch (err) {
+    // Handle CORS/network/404 errors gracefully - endpoint may not be deployed yet
+    const error = err as Error & { status?: number }
+    const errorMessage = error?.message?.toLowerCase() || ''
+    const isCorsOrNetworkError = errorMessage.includes('failed to fetch') || 
+                                 errorMessage.includes('cors') ||
+                                 errorMessage.includes('networkerror') ||
+                                 (error?.name === 'TypeError' && errorMessage.includes('fetch'))
+    
+    if (error?.status === 404 || isCorsOrNetworkError) {
+      // Endpoint may not be deployed yet - return safe default
+      console.warn('Batch completion endpoint not available:', err)
+      return { success: false }
+    }
+    
+    // Re-throw other errors
+    throw err
+  }
+}
+
+/**
  * Create a new batch after day shift completion
  * Requires JWT authentication
  * Handles CORS/network errors gracefully - throws user-friendly error if endpoint unavailable

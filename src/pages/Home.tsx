@@ -21,6 +21,7 @@ export default function Home() {
   const [showNewBatchNotification, setShowNewBatchNotification] = useState(false)
   const [newBatchMessage, setNewBatchMessage] = useState<string>('')
 
+  // Handle accuracy data from navigation state or localStorage
   useEffect(() => {
     // Check navigation state first
     const stateData = location.state as AccuracyData | null
@@ -54,8 +55,10 @@ export default function Home() {
         }
       }
     }
+  }, [location.state])
 
-    // Check for new batch availability using API
+  // Check for new batch availability using API
+  useEffect(() => {
     const checkForNewBatch = async () => {
       const token = getAuthToken()
       if (!token) return
@@ -89,7 +92,7 @@ export default function Home() {
       clearInterval(intervalId)
       window.removeEventListener('dayShiftCompleted', handleDayShiftCompleted)
     }
-  }, [location.state])
+  }, [])
 
   const handleDismissAccuracy = () => {
     setShowAccuracyPanel(false)
