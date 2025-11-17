@@ -10,6 +10,7 @@ import {
   submitFlashcardAnswer,
   getNextQuestion,
   startFlashcardSession,
+  resetShownFlashcards,
   type FlashcardData,
   type FollowUpQuestion,
   type SubmitResult
@@ -44,6 +45,23 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   const [followUpTimer, setFollowUpTimer] = useState(60)
   const [followUpTimerActive, setFollowUpTimerActive] = useState(false)
   const [showHint, setShowHint] = useState(false)
+  const [flashcardCount, setFlashcardCount] = useState(0)
+  const [showContinuePrompt, setShowContinuePrompt] = useState(false)
+  const [correctCount, setCorrectCount] = useState(0)
+  const [incorrectCount, setIncorrectCount] = useState(0)
+  const [flashcardResults, setFlashcardResults] = useState<Array<{
+    flashcardQuestion: string
+    flashcardAnswer: string
+    followUpQuestion: string
+    followUpOptions: Record<string, string>
+    selectedOption: string | null
+    correctAnswer: string
+    explanation: string
+    correct: boolean
+    difficulty: string
+    topic: string
+  }>>([])
+  const [isNewSession, setIsNewSession] = useState(true)
 
   // Check authentication and initialize session on mount
   useEffect(() => {
@@ -54,11 +72,24 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     }
 
     // Initialize session
-    const initSession = async () => {
+    const initSession = async (forceNew = false) => {
       setInitializing(true)
       try {
-        const session = await startFlashcardSession(token)
+        const session = await startFlashcardSession(token, forceNew)
         setSessionSubtopics(session.sessionSubtopics)
+        // Reset flashcard count for new session
+        setFlashcardCount(0)
+        setShowContinuePrompt(false)
+        // Reset score counters and results for new session
+        setCorrectCount(0)
+        setIncorrectCount(0)
+        setFlashcardResults([])
+        setIsNewSession(true)
+        // Clear day shift timer flag for new session - timer should only start after completing batch of 6
+        localStorage.removeItem('hasAttemptedFlashcard')
+        localStorage.removeItem('batchCompletionTime')
+        // Dispatch event to notify Navbar that flag was cleared
+        window.dispatchEvent(new Event('flashcardAttempted'))
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to initialize session')
       } finally {
@@ -91,6 +122,13 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     setFollowUpTimer(60)
     setFollowUpTimerActive(false)
     setShowHint(false)
+    // Reset score counters only when starting a new session (isNewSession is true)
+    if (isNewSession && flashcardCount === 0) {
+      setCorrectCount(0)
+      setIncorrectCount(0)
+      setFlashcardResults([])
+      setIsNewSession(false)
+    }
 
     try {
       // Priority 1: Check for due reviews
@@ -102,7 +140,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setLoading(false)
           return
         }
-      } catch (err) {
+      } catch {
         // No due reviews, continue to priority 2
       }
 
@@ -117,33 +155,99 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           const newSession = await startFlashcardSession(token, true) // Force new session
           setSessionSubtopics(newSession.sessionSubtopics)
           setCompletedSubtopics([])
+          // Reset flashcard count for new session
+          setFlashcardCount(0)
+          setShowContinuePrompt(false)
+          // Reset score counters and results for new session
+          setCorrectCount(0)
+          setIncorrectCount(0)
+          setFlashcardResults([])
+          setIsNewSession(true)
           // Try loading again with a small delay to ensure session is saved
           await new Promise(resolve => setTimeout(resolve, 100))
           const newData = await fetchRandomFlashcardJson(token)
           
-          // Check if still all completed (shouldn't happen, but handle gracefully)
+          // Never show "all completed" error - backend should always return a flashcard
+          // If still all completed, try resetting shown flashcards and fetching again
           if ('allCompleted' in newData && newData.allCompleted) {
-            setError('All flashcards in new session are already completed. Please try again later.')
-            return
-          }
-          
-          if ('flashcard' in newData) {
+            // Reset shown flashcards and try fetching from entire CSV
+            try {
+              const resetResult = await resetShownFlashcards(token)
+              // Continue even if reset failed (endpoint might not exist)
+              if (resetResult) {
+                await new Promise(resolve => setTimeout(resolve, 100))
+              }
+              const retryData = await fetchRandomFlashcardJson(token)
+              
+              if ('flashcard' in retryData) {
+                setCurrentFlashcard(retryData as FlashcardData)
+              } else {
+                // Last resort: try one more time
+                const finalData = await fetchRandomFlashcardJson(token)
+                if ('flashcard' in finalData) {
+                  setCurrentFlashcard(finalData as FlashcardData)
+                } else {
+                  // Silently continue - backend should handle retries
+                  // Don't log as error since this is handled gracefully
+                }
+              }
+            } catch (retryErr) {
+              console.error('Error retrying flashcard load:', retryErr)
+              // Don't show error - backend should handle this
+            }
+          } else if ('flashcard' in newData) {
             setCurrentFlashcard(newData as FlashcardData)
           } else {
-            setError('No flashcards available in new session')
+            // Try one more time without showing error
+            try {
+              const resetResult = await resetShownFlashcards(token)
+              // Continue even if reset failed (endpoint might not exist)
+              if (resetResult) {
+                await new Promise(resolve => setTimeout(resolve, 100))
+              }
+              const retryData = await fetchRandomFlashcardJson(token)
+              if ('flashcard' in retryData) {
+                setCurrentFlashcard(retryData as FlashcardData)
+              }
+            } catch (err) {
+              console.error('Error loading flashcard:', err)
+            }
           }
         } catch (sessionErr) {
           console.error('Error starting new session:', sessionErr)
-          setError('Failed to start new session. Please refresh the page.')
+          // Try to load flashcard anyway - don't show error
+          try {
+            const fallbackData = await fetchRandomFlashcardJson(token)
+            if ('flashcard' in fallbackData) {
+              setCurrentFlashcard(fallbackData as FlashcardData)
+            }
+          } catch (fallbackErr) {
+            console.error('Error in fallback flashcard load:', fallbackErr)
+          }
         }
       } else if ('flashcard' in data) {
         setCurrentFlashcard(data as FlashcardData)
       } else {
-        setError('No flashcards available')
+        // Try to reset and fetch again instead of showing error
+        try {
+          const resetResult = await resetShownFlashcards(token)
+          // Continue even if reset failed (endpoint might not exist)
+          if (resetResult) {
+            await new Promise(resolve => setTimeout(resolve, 100))
+          }
+          const retryData = await fetchRandomFlashcardJson(token)
+          if ('flashcard' in retryData) {
+            setCurrentFlashcard(retryData as FlashcardData)
+          } else {
+            console.error('No flashcards available after reset')
+          }
+        } catch (err) {
+          console.error('Error retrying flashcard load:', err)
+        }
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load flashcard'
-      const requiresSession = (err as any)?.requiresSession || errorMessage.includes('No active session') || errorMessage.includes('requiresSession')
+      const requiresSession = (err as { requiresSession?: boolean })?.requiresSession || errorMessage.includes('No active session') || errorMessage.includes('requiresSession')
       
       if (requiresSession) {
         // Try to start session and retry
@@ -152,6 +256,14 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           if (token) {
             const session = await startFlashcardSession(token)
             setSessionSubtopics(session.sessionSubtopics)
+            // Reset flashcard count for new session
+            setFlashcardCount(0)
+            setShowContinuePrompt(false)
+            // Reset score counters and results for new session
+            setCorrectCount(0)
+            setIncorrectCount(0)
+            setFlashcardResults([])
+            setIsNewSession(true)
             // Retry loading flashcard
             const retryData = await fetchRandomFlashcardJson(token)
             if (retryData && 'flashcard' in retryData) {
@@ -163,6 +275,14 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
               const newSession = await startFlashcardSession(token)
               setSessionSubtopics(newSession.sessionSubtopics)
               setCompletedSubtopics([])
+              // Reset flashcard count for new session
+              setFlashcardCount(0)
+              setShowContinuePrompt(false)
+              // Reset score counters and results for new session
+              setCorrectCount(0)
+              setIncorrectCount(0)
+              setFlashcardResults([])
+              setIsNewSession(true)
               const newData = await fetchRandomFlashcardJson(token)
               if (newData && 'flashcard' in newData) {
                 setCurrentFlashcard(newData as FlashcardData)
@@ -185,6 +305,48 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       setLoading(false)
     }
   }, [navigate])
+
+  // Listen for new batch start event after day shift
+  useEffect(() => {
+    const handleStartNewBatch = async () => {
+      const token = getAuthToken()
+      if (token) {
+        // Reset shown flashcards and start new session
+        try {
+          const resetResult = await resetShownFlashcards(token)
+          // Continue even if reset failed (endpoint might not exist)
+          if (resetResult) {
+            await new Promise(resolve => setTimeout(resolve, 100))
+          }
+          const session = await startFlashcardSession(token, true) // Force new session
+          setSessionSubtopics(session.sessionSubtopics)
+          // Reset flashcard count for new session
+          setFlashcardCount(0)
+          setShowContinuePrompt(false)
+          // Reset score counters and results for new session
+          setCorrectCount(0)
+          setIncorrectCount(0)
+          setFlashcardResults([])
+          setIsNewSession(true)
+          // Clear day shift timer flag for new session
+          localStorage.removeItem('hasAttemptedFlashcard')
+          localStorage.removeItem('batchCompletionTime')
+          // Dispatch event to notify Navbar that flag was cleared
+          window.dispatchEvent(new Event('flashcardAttempted'))
+          // Load first flashcard of new batch
+          await loadFlashcard()
+        } catch (err) {
+          console.error('Error starting new batch:', err)
+        }
+      }
+    }
+
+    window.addEventListener('startNewBatchAfterDayShift', handleStartNewBatch)
+
+    return () => {
+      window.removeEventListener('startNewBatchAfterDayShift', handleStartNewBatch)
+    }
+  }, [loadFlashcard, navigate])
 
   // Initial load
   useEffect(() => {
@@ -222,35 +384,77 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   const handleAutoSubmitAnswer = useCallback(async () => {
     if (!followUpQuestion || !currentFlashcard) return
 
-    setLoading(true)
     setFollowUpTimerActive(false)
+    setLoading(true)
+    
     try {
-      const token = getAuthToken()
-      if (!token) {
-        throw new Error('Authentication required to submit answers')
-      }
+      // When time runs out, skip API submission and move directly to next flashcard
+      // Track as incorrect locally without calling the backend
+      setIncorrectCount((prev) => prev + 1)
 
-      // Submit with no answer (empty string) - this will mark as wrong
-      const data = await submitFlashcardAnswer(
-        followUpQuestion.questionId,
-        '',
-        token,
-        currentFlashcard.questionId,
-        currentFlashcard.subTopic
-      )
-      
-      setSubmitResult(data)
+      // Store individual result for timeout case
+      const correctAnswerKey = followUpQuestion.key || 'A'
+      const result = {
+        flashcardQuestion: currentFlashcard.flashcard,
+        flashcardAnswer: currentFlashcard.flashcardAnswer || '',
+        followUpQuestion: followUpQuestion.question,
+        followUpOptions: followUpQuestion.options,
+        selectedOption: null, // No answer selected (timeout)
+        correctAnswer: `Option ${correctAnswerKey}`,
+        explanation: followUpQuestion.explanation || 'Time ran out. No answer was submitted.',
+        correct: false,
+        difficulty: difficulty || 'medium',
+        topic: currentFlashcard.topic
+      }
+      setFlashcardResults((prev) => [...prev, result])
 
       // Mark subtopic as completed
       if (currentFlashcard.subTopic && !completedSubtopics.includes(currentFlashcard.subTopic)) {
         setCompletedSubtopics([...completedSubtopics, currentFlashcard.subTopic])
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to submit answer')
+
+      // Increment flashcard count
+      const newCount = flashcardCount + 1
+      setFlashcardCount(newCount)
+
+      // If we've completed 6 flashcards, show continue prompt and start day shift timer
+      if (newCount === 6) {
+        setShowContinuePrompt(true)
+        // Start day shift timer after completing batch of 6 flashcards
+        localStorage.setItem('hasAttemptedFlashcard', 'true')
+        localStorage.setItem('batchCompletionTime', Date.now().toString())
+        // Dispatch custom event to notify Navbar immediately
+        window.dispatchEvent(new Event('flashcardAttempted'))
+        // Create a result object for display purposes
+        const correctAnswerKey = followUpQuestion.key || 'A'
+        setSubmitResult({
+          correct: false,
+          correctAnswer: `Option ${correctAnswerKey}`,
+          explanation: followUpQuestion.explanation || 'Time ran out. No answer was submitted.'
+        })
+        // Clear follow-up question state
+        setFollowUpQuestion(null)
+        setSelectedOption(null)
+      } else {
+        // Move directly to next flashcard without showing result
+        // Reset states and load next flashcard
+        setFollowUpQuestion(null)
+        setSelectedOption(null)
+        setSubmitResult(null)
+        setError(null)
+        await loadFlashcard()
+      }
+    } catch {
+      // If there's an error loading next flashcard, just clear states and try again
+      setError(null)
+      setFollowUpQuestion(null)
+      setSelectedOption(null)
+      setSubmitResult(null)
+      loadFlashcard()
     } finally {
       setLoading(false)
     }
-  }, [followUpQuestion, currentFlashcard, completedSubtopics])
+  }, [followUpQuestion, currentFlashcard, completedSubtopics, flashcardCount, loadFlashcard])
 
   // Timer countdown for follow-up question - 60 seconds
   useEffect(() => {
@@ -354,9 +558,45 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       
       setSubmitResult(data)
 
+      // Track score
+      if (data.correct) {
+        setCorrectCount((prev) => prev + 1)
+      } else {
+        setIncorrectCount((prev) => prev + 1)
+      }
+
+      // Store individual result
+      const result = {
+        flashcardQuestion: currentFlashcard.flashcard,
+        flashcardAnswer: currentFlashcard.flashcardAnswer || '',
+        followUpQuestion: followUpQuestion.question,
+        followUpOptions: followUpQuestion.options,
+        selectedOption: selectedOption,
+        correctAnswer: data.correctAnswer,
+        explanation: data.explanation,
+        correct: data.correct,
+        difficulty: difficulty || 'medium',
+        topic: currentFlashcard.topic
+      }
+      setFlashcardResults((prev) => [...prev, result])
+
       // Mark subtopic as completed
       if (currentFlashcard.subTopic && !completedSubtopics.includes(currentFlashcard.subTopic)) {
         setCompletedSubtopics([...completedSubtopics, currentFlashcard.subTopic])
+      }
+
+      // Increment flashcard count
+      const newCount = flashcardCount + 1
+      setFlashcardCount(newCount)
+
+      // If we've completed 6 flashcards, show continue prompt and start day shift timer
+      if (newCount === 6) {
+        setShowContinuePrompt(true)
+        // Start day shift timer after completing batch of 6 flashcards
+        localStorage.setItem('hasAttemptedFlashcard', 'true')
+        localStorage.setItem('batchCompletionTime', Date.now().toString())
+        // Dispatch custom event to notify Navbar immediately
+        window.dispatchEvent(new Event('flashcardAttempted'))
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit answer')
@@ -366,10 +606,33 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   }
 
   const handleNextFlashcard = () => {
+    // Don't load next flashcard if continue prompt is showing
+    if (showContinuePrompt) {
+      return
+    }
     // Reset follow-up timer state
     setFollowUpTimer(60)
     setFollowUpTimerActive(false)
     loadFlashcard()
+  }
+
+  const handleGoToHome = () => {
+    // Calculate accuracy based on actual answered questions
+    const total = correctCount + incorrectCount
+    const accuracy = total > 0 ? Math.round((correctCount / total) * 100) : 0
+    
+    // Store accuracy data in localStorage
+    const accuracyData = {
+      accuracy,
+      correct: correctCount,
+      incorrect: incorrectCount,
+      total: total || 6, // Use actual total, fallback to 6 if no answers yet
+      timestamp: Date.now()
+    }
+    localStorage.setItem('flashcardSessionAccuracy', JSON.stringify(accuracyData))
+    
+    // Navigate to home page with accuracy data
+    navigate('/', { state: accuracyData })
   }
 
   // Check authentication
@@ -681,7 +944,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       )}
 
       {/* Submit Result */}
-      {submitResult && (
+      {submitResult && !showContinuePrompt && (
         <div className="submit-result">
           <div style={{ 
             textAlign: 'center', 
@@ -729,6 +992,283 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         </div>
       )}
 
+      {/* Session Complete - Stats Summary */}
+      {showContinuePrompt && (flashcardResults.length === 6 || submitResult) && (() => {
+        const total = correctCount + incorrectCount || flashcardResults.length || 6
+        const accuracy = total > 0 ? Math.round((correctCount / total) * 100) : 0
+        
+        return (
+          <div className="continue-prompt" style={{
+            background: 'white',
+            padding: '32px',
+            borderRadius: '16px',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            textAlign: 'center',
+            maxWidth: '900px',
+            margin: '0 auto'
+          }}>
+            <h2 style={{ 
+              fontSize: '28px', 
+              marginBottom: '24px',
+              color: '#0369a1',
+              fontWeight: 700
+            }}>
+              Session Complete! 🎉
+            </h2>
+
+            {/* Stats Summary */}
+            <div style={{
+              padding: '24px',
+              background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
+              borderRadius: '12px',
+              marginBottom: '24px',
+              border: '2px solid #0369a1'
+            }}>
+              <div style={{
+                fontSize: '64px',
+                fontWeight: 700,
+                color: accuracy >= 70 ? '#059669' : accuracy >= 50 ? '#f59e0b' : '#dc2626',
+                marginBottom: '8px'
+              }}>
+                {accuracy}%
+              </div>
+              <div style={{
+                fontSize: '18px',
+                color: '#0369a1',
+                fontWeight: 600,
+                marginBottom: '20px'
+              }}>
+                Accuracy
+              </div>
+              
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '16px',
+                marginTop: '20px'
+              }}>
+                <div style={{
+                  background: 'white',
+                  padding: '16px',
+                  borderRadius: '8px',
+                  border: '1px solid #e5e7eb'
+                }}>
+                  <div style={{
+                    fontSize: '32px',
+                    fontWeight: 700,
+                    color: '#0369a1',
+                    marginBottom: '4px'
+                  }}>
+                    {total}
+                  </div>
+                  <div style={{
+                    fontSize: '14px',
+                    color: '#64748b'
+                  }}>
+                    Total
+                  </div>
+                </div>
+                <div style={{
+                  background: 'white',
+                  padding: '16px',
+                  borderRadius: '8px',
+                  border: '1px solid #e5e7eb'
+                }}>
+                  <div style={{
+                    fontSize: '32px',
+                    fontWeight: 700,
+                    color: '#059669',
+                    marginBottom: '4px'
+                  }}>
+                    {correctCount}
+                  </div>
+                  <div style={{
+                    fontSize: '14px',
+                    color: '#64748b'
+                  }}>
+                    Correct
+                  </div>
+                </div>
+                <div style={{
+                  background: 'white',
+                  padding: '16px',
+                  borderRadius: '8px',
+                  border: '1px solid #e5e7eb'
+                }}>
+                  <div style={{
+                    fontSize: '32px',
+                    fontWeight: 700,
+                    color: '#dc2626',
+                    marginBottom: '4px'
+                  }}>
+                    {incorrectCount}
+                  </div>
+                  <div style={{
+                    fontSize: '14px',
+                    color: '#64748b'
+                  }}>
+                    Incorrect
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Individual Results for All Cards */}
+            {flashcardResults.length > 0 && (
+              <div style={{ marginBottom: '24px' }}>
+                <h3 style={{ 
+                  fontSize: '20px', 
+                  fontWeight: 600, 
+                  marginBottom: '16px',
+                  color: '#0369a1',
+                  textAlign: 'center'
+                }}>
+                  Individual Results
+                </h3>
+                <div style={{ display: 'grid', gap: '16px' }}>
+                  {flashcardResults.map((result, idx) => (
+                    <div 
+                      key={idx}
+                      style={{ 
+                        background: result.correct ? '#ecfdf5' : '#fef2f2', 
+                        border: `2px solid ${result.correct ? '#059669' : '#dc2626'}`,
+                        padding: '20px', 
+                        borderRadius: '12px',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        marginBottom: '12px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ 
+                            fontSize: '18px', 
+                            fontWeight: 700,
+                            color: result.correct ? '#059669' : '#dc2626'
+                          }}>
+                            Card {idx + 1}
+                          </span>
+                          <span style={{ 
+                            background: result.correct ? '#059669' : '#dc2626',
+                            color: 'white',
+                            padding: '4px 12px',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: 600
+                          }}>
+                            {result.difficulty}
+                          </span>
+                        </div>
+                        <div style={{ 
+                          fontSize: '24px',
+                          color: result.correct ? '#059669' : '#dc2626'
+                        }}>
+                          {result.correct ? <FaCheckCircle /> : <FaTimesCircle />}
+                        </div>
+                      </div>
+
+                      {/* Flashcard Question */}
+                      <div style={{ marginBottom: '12px' }}>
+                        <h5 style={{ 
+                          marginBottom: '8px', 
+                          fontSize: '14px', 
+                          fontWeight: 600,
+                          color: '#64748b'
+                        }}>
+                          Flashcard:
+                        </h5>
+                        <div style={{ fontSize: '14px', lineHeight: 1.6 }}>
+                          {renderText(result.flashcardQuestion)}
+                        </div>
+                      </div>
+
+                      {/* Follow-up Question */}
+                      <div style={{ marginBottom: '12px' }}>
+                        <h5 style={{ 
+                          marginBottom: '8px', 
+                          fontSize: '14px', 
+                          fontWeight: 600,
+                          color: '#64748b'
+                        }}>
+                          Follow-up Question:
+                        </h5>
+                        <div style={{ fontSize: '14px', lineHeight: 1.6, marginBottom: '8px' }}>
+                          {renderText(result.followUpQuestion)}
+                        </div>
+                        <div style={{ marginTop: '8px' }}>
+                          {Object.entries(result.followUpOptions).map(([key, value]) => {
+                            const isCorrect = result.correctAnswer === `Option ${key}`
+                            const isSelected = result.selectedOption === `Option ${key}`
+                            return (
+                              <div
+                                key={key}
+                                style={{
+                                  padding: '8px 12px',
+                                  marginBottom: '6px',
+                                  borderRadius: '6px',
+                                  background: isCorrect ? '#ecfdf5' : isSelected ? '#fef2f2' : '#f9fafb',
+                                  border: isCorrect ? '2px solid #059669' : isSelected ? '2px solid #dc2626' : '1px solid #e5e7eb',
+                                  fontWeight: isCorrect ? 700 : isSelected ? 600 : 400,
+                                  color: isCorrect ? '#059669' : isSelected ? '#dc2626' : '#374151'
+                                }}
+                              >
+                                <strong>Option {key}:</strong> {renderText(value)}
+                                {isCorrect && ' ✓ (Correct Answer)'}
+                                {isSelected && !isCorrect && ' (Your Choice)'}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Explanation */}
+                      <div style={{ 
+                        marginTop: '12px',
+                        padding: '12px',
+                        background: 'white',
+                        borderRadius: '8px',
+                        border: '1px solid #e5e7eb'
+                      }}>
+                        <h5 style={{ 
+                          marginBottom: '8px', 
+                          fontSize: '14px', 
+                          fontWeight: 600,
+                          color: '#64748b'
+                        }}>
+                          Explanation:
+                        </h5>
+                        <div style={{ fontSize: '14px', lineHeight: 1.6 }}>
+                          {renderText(result.explanation)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button
+              className="btn"
+              onClick={handleGoToHome}
+              style={{ 
+                width: '100%',
+                background: '#0369a1',
+                color: 'white',
+                border: 'none',
+                fontSize: '18px',
+                padding: '14px 28px',
+                fontWeight: 600
+              }}
+            >
+              Go to Home
+            </button>
+          </div>
+        )
+      })()}
+
       {error && currentFlashcard && (
         <div style={{ 
           marginTop: '16px', 
@@ -745,3 +1285,4 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     </div>
   )
 }
+

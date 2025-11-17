@@ -1,7 +1,103 @@
-import { FaLightbulb, FaChartLine, FaTrophy } from 'react-icons/fa'
+import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
+import { FaLightbulb, FaChartLine, FaTrophy, FaTimes, FaCheckCircle } from 'react-icons/fa'
 import FlashcardSystem from '../components/FlashcardSystem'
 
+interface AccuracyData {
+  accuracy: number
+  correct: number
+  incorrect: number
+  total: number
+  timestamp?: number
+}
+
 export default function Home() {
+  const location = useLocation()
+  const [accuracyData, setAccuracyData] = useState<AccuracyData | null>(null)
+  const [showAccuracyPanel, setShowAccuracyPanel] = useState(false)
+  const [showNewBatchNotification, setShowNewBatchNotification] = useState(false)
+
+  useEffect(() => {
+    // Check navigation state first
+    const stateData = location.state as AccuracyData | null
+    if (stateData && stateData.accuracy !== undefined) {
+      setAccuracyData(stateData)
+      setShowAccuracyPanel(true)
+      // Store in localStorage
+      localStorage.setItem('flashcardSessionAccuracy', JSON.stringify({
+        ...stateData,
+        timestamp: Date.now()
+      }))
+      // Clear navigation state to prevent showing again on refresh
+      window.history.replaceState({}, document.title)
+    } else {
+      // Check localStorage for recent accuracy data
+      const stored = localStorage.getItem('flashcardSessionAccuracy')
+      if (stored) {
+        try {
+          const data = JSON.parse(stored) as AccuracyData & { timestamp?: number }
+          // Only show if data is less than 1 hour old
+          if (data.timestamp && Date.now() - data.timestamp < 3600000) {
+            setAccuracyData(data)
+            setShowAccuracyPanel(true)
+          } else {
+            // Clear old data
+            localStorage.removeItem('flashcardSessionAccuracy')
+          }
+        } catch (err) {
+          console.error('Error parsing stored accuracy data:', err)
+          localStorage.removeItem('flashcardSessionAccuracy')
+        }
+      }
+    }
+
+    // Check for day shift completion
+    const checkDayShiftCompleted = () => {
+      const dayShiftCompleted = localStorage.getItem('dayShiftCompleted') === 'true'
+      if (dayShiftCompleted) {
+        setShowNewBatchNotification(true)
+      }
+    }
+
+    // Check on mount
+    checkDayShiftCompleted()
+
+    // Listen for day shift completion event
+    const handleDayShiftCompleted = () => {
+      setShowNewBatchNotification(true)
+    }
+
+    window.addEventListener('dayShiftCompleted', handleDayShiftCompleted)
+
+    return () => {
+      window.removeEventListener('dayShiftCompleted', handleDayShiftCompleted)
+    }
+  }, [location.state])
+
+  const handleDismissAccuracy = () => {
+    setShowAccuracyPanel(false)
+    localStorage.removeItem('flashcardSessionAccuracy')
+  }
+
+  const handleStartNewBatch = () => {
+    // Clear the day shift completed flag
+    localStorage.removeItem('dayShiftCompleted')
+    localStorage.removeItem('dayShiftCompletedTime')
+    setShowNewBatchNotification(false)
+    // Scroll to flashcard section and trigger new session
+    const flashcardSection = document.getElementById('flashcard-learning')
+    if (flashcardSection) {
+      flashcardSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      // Dispatch event to trigger new session in FlashcardSystem
+      window.dispatchEvent(new Event('startNewBatchAfterDayShift'))
+    }
+  }
+
+  const handleDismissNewBatch = () => {
+    setShowNewBatchNotification(false)
+    localStorage.removeItem('dayShiftCompleted')
+    localStorage.removeItem('dayShiftCompletedTime')
+  }
 
   return (
     <div style={{ paddingBottom: 48 }}>
@@ -9,6 +105,293 @@ export default function Home() {
         <h1>Master Concepts with Interactive Flashcards</h1>
         <p>Learn, practice, and reinforce your knowledge with our adaptive flashcard system powered by spaced repetition.</p>
       </div>
+
+      {/* New Batch Notification */}
+      {showNewBatchNotification && (
+        <section style={{ 
+          marginTop: 32, 
+          marginBottom: 32,
+          maxWidth: '800px',
+          marginLeft: 'auto',
+          marginRight: 'auto'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+            padding: '24px',
+            borderRadius: '16px',
+            border: '2px solid #059669',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px'
+          }}>
+            <div style={{
+              fontSize: '32px',
+              color: '#059669',
+              flexShrink: 0
+            }}>
+              <FaCheckCircle />
+            </div>
+            <div style={{ flex: 1 }}>
+              <h3 style={{
+                fontSize: '20px',
+                fontWeight: 700,
+                color: '#059669',
+                marginBottom: '8px'
+              }}>
+                New Batch Ready! 🎉
+              </h3>
+              <p style={{
+                fontSize: '14px',
+                color: '#047857',
+                margin: 0,
+                lineHeight: 1.5
+              }}>
+                Your day shift has completed. A new batch of flashcards is available, including questions you answered incorrectly in the previous session.
+              </p>
+            </div>
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              flexShrink: 0
+            }}>
+              <button
+                onClick={handleStartNewBatch}
+                style={{
+                  background: '#059669',
+                  color: 'white',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#047857'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#059669'
+                }}
+              >
+                Start New Batch
+              </button>
+              <button
+                onClick={handleDismissNewBatch}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '20px',
+                  color: '#64748b',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)'
+                  e.currentTarget.style.color = '#059669'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'none'
+                  e.currentTarget.style.color = '#64748b'
+                }}
+                aria-label="Dismiss notification"
+              >
+                <FaTimes />
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Accuracy Panel */}
+      {showAccuracyPanel && accuracyData && (
+        <section style={{ 
+          marginTop: 32, 
+          marginBottom: 32,
+          maxWidth: '800px',
+          marginLeft: 'auto',
+          marginRight: 'auto'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
+            padding: '24px',
+            borderRadius: '16px',
+            border: '2px solid #0369a1',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            position: 'relative'
+          }}>
+            <button
+              onClick={handleDismissAccuracy}
+              style={{
+                position: 'absolute',
+                top: '12px',
+                right: '12px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '20px',
+                color: '#64748b',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)'
+                e.currentTarget.style.color = '#0369a1'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'none'
+                e.currentTarget.style.color = '#64748b'
+              }}
+              aria-label="Dismiss accuracy panel"
+            >
+              <FaTimes />
+            </button>
+
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              <h2 style={{
+                fontSize: '24px',
+                fontWeight: 700,
+                color: '#0369a1',
+                marginBottom: '8px'
+              }}>
+                Your Last Session Performance
+              </h2>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '32px',
+              flexWrap: 'wrap'
+            }}>
+              <div style={{
+                textAlign: 'center',
+                minWidth: '120px'
+              }}>
+                <div style={{
+                  fontSize: '48px',
+                  fontWeight: 700,
+                  color: accuracyData.accuracy >= 70 ? '#059669' : accuracyData.accuracy >= 50 ? '#f59e0b' : '#dc2626',
+                  marginBottom: '4px'
+                }}>
+                  {accuracyData.accuracy}%
+                </div>
+                <div style={{
+                  fontSize: '14px',
+                  color: '#64748b',
+                  fontWeight: 600
+                }}>
+                  Accuracy
+                </div>
+              </div>
+
+              <div style={{
+                display: 'flex',
+                gap: '24px',
+                flexWrap: 'wrap',
+                justifyContent: 'center'
+              }}>
+                <div style={{
+                  textAlign: 'center',
+                  background: 'white',
+                  padding: '16px 24px',
+                  borderRadius: '12px',
+                  border: '1px solid #e5e7eb',
+                  minWidth: '100px'
+                }}>
+                  <div style={{
+                    fontSize: '32px',
+                    fontWeight: 700,
+                    color: '#0369a1',
+                    marginBottom: '4px'
+                  }}>
+                    {accuracyData.total}
+                  </div>
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#64748b'
+                  }}>
+                    Total
+                  </div>
+                </div>
+                <div style={{
+                  textAlign: 'center',
+                  background: 'white',
+                  padding: '16px 24px',
+                  borderRadius: '12px',
+                  border: '1px solid #e5e7eb',
+                  minWidth: '100px'
+                }}>
+                  <div style={{
+                    fontSize: '32px',
+                    fontWeight: 700,
+                    color: '#059669',
+                    marginBottom: '4px'
+                  }}>
+                    {accuracyData.correct}
+                  </div>
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#64748b'
+                  }}>
+                    Correct
+                  </div>
+                </div>
+                <div style={{
+                  textAlign: 'center',
+                  background: 'white',
+                  padding: '16px 24px',
+                  borderRadius: '12px',
+                  border: '1px solid #e5e7eb',
+                  minWidth: '100px'
+                }}>
+                  <div style={{
+                    fontSize: '32px',
+                    fontWeight: 700,
+                    color: '#dc2626',
+                    marginBottom: '4px'
+                  }}>
+                    {accuracyData.incorrect}
+                  </div>
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#64748b'
+                  }}>
+                    Incorrect
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div style={{
+              marginTop: '20px',
+              background: 'white',
+              borderRadius: '8px',
+              padding: '4px',
+              border: '1px solid #e5e7eb'
+            }}>
+              <div style={{
+                height: '12px',
+                background: accuracyData.accuracy >= 70 
+                  ? 'linear-gradient(90deg, #059669 0%, #10b981 100%)'
+                  : accuracyData.accuracy >= 50
+                  ? 'linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%)'
+                  : 'linear-gradient(90deg, #dc2626 0%, #ef4444 100%)',
+                borderRadius: '6px',
+                width: `${accuracyData.accuracy}%`,
+                transition: 'width 0.5s ease'
+              }} />
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Flashcard Learning Section */}
       <section id="flashcard-learning" style={{ marginTop: 48, marginBottom: 48, scrollMarginTop: '90px' }}>

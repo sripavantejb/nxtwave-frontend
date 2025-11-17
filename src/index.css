@@ -80,6 +80,32 @@ a {
   justify-content: space-between;
   height: 72px;
   padding: 0 24px;
+  gap: 16px;
+}
+
+.day-shift-timer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-light);
+  white-space: nowrap;
+  padding: 6px 12px;
+  background: rgba(153, 27, 27, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(153, 27, 27, 0.1);
+}
+
+.day-shift-label {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.day-shift-time {
+  font-weight: 600;
+  color: var(--accent);
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.5px;
 }
 
 .brand {
@@ -248,6 +274,20 @@ a {
 
   .brand-logo {
     height: 32px;
+  }
+
+  .day-shift-timer {
+    font-size: 11px;
+    padding: 4px 8px;
+    gap: 6px;
+  }
+
+  .day-shift-label {
+    display: none;
+  }
+
+  .day-shift-time {
+    font-size: 12px;
   }
 }
 

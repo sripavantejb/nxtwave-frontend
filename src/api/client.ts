@@ -108,7 +108,11 @@ async function request<T>(
       console.error(errorMsg)
       throw new Error(errorMsg)
     }
-    if (import.meta.env.DEV) {
+    // Suppress error logging for 404 on reset-shown endpoint (expected if not deployed)
+    const error = err as Error & { status?: number }
+    const isResetShown404 = path.includes('/reset-shown') && (error?.status === 404 || error?.message?.toLowerCase().includes('not found'))
+    
+    if (import.meta.env.DEV && !isResetShown404) {
       console.error('Request error:', err)
     }
     throw err as Error
@@ -355,6 +359,39 @@ export async function startFlashcardSession(token: string, forceNew: boolean = f
 export async function getSessionSubtopics(token: string): Promise<string[]> {
   const response = await startFlashcardSession(token)
   return response.sessionSubtopics
+}
+
+/**
+ * Reset shown flashcards for current session
+ * Requires JWT authentication
+ * Returns null if endpoint doesn't exist (404) - handles gracefully
+ */
+export async function resetShownFlashcards(token: string): Promise<{ success: boolean, message: string } | null> {
+  try {
+    return await request<{ success: boolean, message: string }>(
+      '/api/flashcards/reset-shown',
+      undefined,
+      { 
+        token,
+        method: 'POST'
+      }
+    )
+  } catch (err) {
+    // If endpoint doesn't exist (404), return null instead of throwing
+    // This allows the app to continue functioning even if the endpoint isn't deployed
+    const error = err as Error & { status?: number }
+    const errorMessage = error?.message?.toLowerCase() || ''
+    const is404 = error?.status === 404 || 
+                  errorMessage.includes('not found') || 
+                  errorMessage.includes('404')
+    
+    if (is404) {
+      // Silently handle 404 - don't log as error since it's expected if endpoint doesn't exist
+      return null
+    }
+    // Re-throw other errors
+    throw err
+  }
 }
 
 // ============== Authentication API Functions ==============

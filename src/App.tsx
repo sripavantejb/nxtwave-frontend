@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ToastContainer } from 'react-toastify'
@@ -17,14 +17,172 @@ import 'katex/dist/katex.min.css'
 import 'react-toastify/dist/ReactToastify.css'
 import './App.css'
 import './index.css'
-import { useEffect } from 'react'
 import { pingHealth } from './api/client'
+
+function DayShiftTimer({ shouldStart = false }: { shouldStart?: boolean }) {
+  const [timeRemaining, setTimeRemaining] = useState('00:00')
+  const intervalRef = useRef<number | null>(null)
+  const hasDispatchedRef = useRef<boolean>(false)
+
+  useEffect(() => {
+    // Only start timer if shouldStart is true
+    if (!shouldStart) {
+      setTimeRemaining('00:00')
+      hasDispatchedRef.current = false
+      // Clear any existing interval
+      if (intervalRef.current !== null) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+      return
+    }
+
+    // Check for existing batchCompletionTime from localStorage
+    const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
+    let targetTime: number | null = null
+
+    if (batchCompletionTimeStr) {
+      const completionTime = parseInt(batchCompletionTimeStr, 10)
+      if (!isNaN(completionTime)) {
+        // Calculate target time: completion time + 5 minutes
+        targetTime = completionTime + (5 * 60 * 1000)
+      }
+    }
+
+    const calculateTimeString = (remainingMs: number): string => {
+      const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000))
+      const minutes = Math.floor(totalSeconds / 60)
+      const seconds = totalSeconds % 60
+      return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    }
+
+    const updateTimer = () => {
+      const now = Date.now()
+      
+      if (targetTime !== null) {
+        // Use persisted batch completion time
+        const remaining = targetTime - now
+        
+        if (remaining <= 0) {
+          // Timer already completed
+          setTimeRemaining('00:00')
+          
+          // Dispatch day shift completion event if we haven't already
+          if (!hasDispatchedRef.current) {
+            hasDispatchedRef.current = true
+            localStorage.setItem('dayShiftCompleted', 'true')
+            localStorage.setItem('dayShiftCompletedTime', Date.now().toString())
+            window.dispatchEvent(new Event('dayShiftCompleted'))
+          }
+        } else {
+          const timeString = calculateTimeString(remaining)
+          setTimeRemaining(timeString)
+          
+          // Reset dispatch flag if timer is not at 00:00
+          if (timeString !== '00:00') {
+            hasDispatchedRef.current = false
+          }
+        }
+      } else {
+        // No existing timer, use calculateNextDayShift() logic
+        const nowDate = new Date()
+        const currentMinutes = nowDate.getMinutes()
+        
+        // Calculate next 5-minute interval
+        let nextIntervalMinutes = Math.ceil((currentMinutes + 1) / 5) * 5
+        
+        const nextDayShift = new Date(nowDate)
+        
+        // Handle hour rollover
+        if (nextIntervalMinutes >= 60) {
+          nextDayShift.setHours(nextDayShift.getHours() + 1)
+          nextIntervalMinutes = nextIntervalMinutes % 60
+        }
+        
+        nextDayShift.setMinutes(nextIntervalMinutes)
+        nextDayShift.setSeconds(0)
+        nextDayShift.setMilliseconds(0)
+        
+        // If the calculated time is in the past (edge case), add 5 more minutes
+        if (nextDayShift.getTime() <= now) {
+          nextDayShift.setMinutes(nextDayShift.getMinutes() + 5)
+        }
+        
+        const diff = nextDayShift.getTime() - now
+        
+        if (diff <= 0) {
+          // Timer reached 0, recalculate for next interval
+          const newNextDayShift = new Date(nextDayShift)
+          newNextDayShift.setMinutes(newNextDayShift.getMinutes() + 5)
+          const newDiff = newNextDayShift.getTime() - now
+          setTimeRemaining(calculateTimeString(newDiff))
+          
+          // Dispatch day shift completion event if we haven't already
+          if (!hasDispatchedRef.current) {
+            hasDispatchedRef.current = true
+            localStorage.setItem('dayShiftCompleted', 'true')
+            localStorage.setItem('dayShiftCompletedTime', Date.now().toString())
+            window.dispatchEvent(new Event('dayShiftCompleted'))
+          }
+        } else {
+          const timeString = calculateTimeString(diff)
+          setTimeRemaining(timeString)
+          
+          // Reset dispatch flag if timer is not at 00:00
+          if (timeString !== '00:00') {
+            hasDispatchedRef.current = false
+          }
+        }
+      }
+    }
+
+    // Update immediately
+    updateTimer()
+
+    // Update every second
+    intervalRef.current = window.setInterval(updateTimer, 1000)
+
+    return () => {
+      if (intervalRef.current !== null) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+  }, [shouldStart])
+
+  return (
+    <div className="day-shift-timer">
+      <span className="day-shift-label">Next Day Shift:</span>
+      <span className="day-shift-time">{timeRemaining}</span>
+    </div>
+  )
+}
 
 function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [hasAttemptedFlashcard, setHasAttemptedFlashcard] = useState(false)
   const location = useLocation()
   const isHomePage = location.pathname === '/'
   const { isAuthenticated, user, logout } = useAuth()
+
+  // Check if user has attempted flashcard
+  useEffect(() => {
+    const checkFlashcardAttempt = () => {
+      const attempted = localStorage.getItem('hasAttemptedFlashcard') === 'true'
+      setHasAttemptedFlashcard(attempted)
+    }
+    
+    checkFlashcardAttempt()
+    // Listen for storage changes (in case flag is set in another tab/component)
+    window.addEventListener('storage', checkFlashcardAttempt)
+    // Listen for custom event when flashcard is attempted in same tab
+    window.addEventListener('flashcardAttempted', checkFlashcardAttempt)
+    
+    return () => {
+      window.removeEventListener('storage', checkFlashcardAttempt)
+      window.removeEventListener('flashcardAttempted', checkFlashcardAttempt)
+    }
+  }, [])
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen)
@@ -56,6 +214,9 @@ function Navbar() {
   return (
     <nav className="navbar">
       <div className="container navbar-inner">
+        {isAuthenticated && hasAttemptedFlashcard && (
+          <DayShiftTimer shouldStart={true} />
+        )}
         <Link 
           to="/" 
           className="brand" 
@@ -86,22 +247,6 @@ function Navbar() {
           >
             Home
           </Link>
-          {isHomePage ? (
-            <a 
-              className="nav-link" 
-              href="#learn-concepts"
-              onClick={(e) => {
-                e.preventDefault()
-                scrollToSection('learn-concepts')
-              }}
-            >
-              Learn Concepts
-            </a>
-          ) : (
-            <Link className="nav-link" to="/conceptual-guidelines" onClick={closeMenu}>
-              Learn Concepts
-            </Link>
-          )}
           {isHomePage ? (
             <a 
               className="nav-link" 
