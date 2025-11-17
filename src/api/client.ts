@@ -108,11 +108,13 @@ async function request<T>(
       console.error(errorMsg)
       throw new Error(errorMsg)
     }
-    // Suppress error logging for 404 on reset-shown endpoint (expected if not deployed)
+    // Suppress error logging for 404 on reset-shown and follow-up question endpoints (expected if not deployed or no questions available)
     const error = err as Error & { status?: number }
-    const isResetShown404 = path.includes('/reset-shown') && (error?.status === 404 || error?.message?.toLowerCase().includes('not found'))
+    const isExpected404 = (path.includes('/reset-shown') || path.includes('/question/followup')) && 
+                          (error?.status === 404 || error?.message?.toLowerCase().includes('not found') || 
+                           error?.message?.toLowerCase().includes('no follow-up questions available'))
     
-    if (import.meta.env.DEV && !isResetShown404) {
+    if (import.meta.env.DEV && !isExpected404) {
       console.error('Request error:', err)
     }
     throw err as Error

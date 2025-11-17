@@ -375,7 +375,18 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       setFollowUpTimer(60)
       setFollowUpTimerActive(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load follow-up question')
+      // Handle 404 errors gracefully - no follow-up question available, skip it
+      const error = err as Error & { status?: number }
+      if (error?.status === 404 || (error?.message && error.message.includes('No follow-up questions available'))) {
+        // Silently skip follow-up question - don't show error to user
+        console.log('No follow-up question available, skipping...')
+        // Don't set error state - just continue without follow-up question
+        // The UI will show the flashcard answer without a follow-up question
+        return
+      }
+      // For other errors, log but don't show to user (to avoid disrupting flow)
+      console.error('Error loading follow-up question:', err)
+      // Don't set error state - gracefully continue without follow-up question
     }
   }, [])
 
