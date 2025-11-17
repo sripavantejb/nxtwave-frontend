@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FaClock, FaStar, FaCheckCircle, FaTimesCircle } from 'react-icons/fa'
 import { renderText } from './renderText'
@@ -62,6 +62,37 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     topic: string
   }>>([])
   const [isNewSession, setIsNewSession] = useState(true)
+  const [hasStarted, setHasStarted] = useState(false)
+  const [timerStartTime, setTimerStartTime] = useState<number | null>(null)
+  const [followUpTimerStartTime, setFollowUpTimerStartTime] = useState<number | null>(null)
+  
+  // Refs to store current values for timer callback
+  const currentFlashcardRef = useRef<FlashcardData | null>(null)
+  const followUpQuestionRef = useRef<FollowUpQuestion | null>(null)
+  const difficultyRef = useRef<string | null>(null)
+  const completedSubtopicsRef = useRef<string[]>([])
+  const flashcardCountRef = useRef(0)
+  
+  // Update refs when state changes
+  useEffect(() => {
+    currentFlashcardRef.current = currentFlashcard
+  }, [currentFlashcard])
+  
+  useEffect(() => {
+    followUpQuestionRef.current = followUpQuestion
+  }, [followUpQuestion])
+  
+  useEffect(() => {
+    difficultyRef.current = difficulty
+  }, [difficulty])
+  
+  useEffect(() => {
+    completedSubtopicsRef.current = completedSubtopics
+  }, [completedSubtopics])
+  
+  useEffect(() => {
+    flashcardCountRef.current = flashcardCount
+  }, [flashcardCount])
 
   // localStorage keys for flashcard progress
   const FLASHCARD_STORAGE_KEY = 'nxtquiz_flashcardProgress'
@@ -74,10 +105,48 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       incorrectCount,
       flashcardResults,
       completedSubtopics,
+      hasStarted,
+      currentFlashcard,
+      showAnswer,
+      rating,
+      difficulty,
+      followUpQuestion,
+      selectedOption,
+      submitResult,
+      timerActive,
+      timeLeft,
+      timerStartTime,
+      followUpTimerActive,
+      followUpTimer,
+      followUpTimerStartTime,
+      hasRated,
+      showHint,
       timestamp: Date.now()
     }
     localStorage.setItem(FLASHCARD_STORAGE_KEY, JSON.stringify(progress))
-  }, [flashcardCount, correctCount, incorrectCount, flashcardResults, completedSubtopics])
+  }, [
+    flashcardCount, 
+    correctCount, 
+    incorrectCount, 
+    flashcardResults, 
+    completedSubtopics,
+    hasStarted,
+    currentFlashcard,
+    showAnswer,
+    rating,
+    difficulty,
+    followUpQuestion,
+    selectedOption,
+    submitResult,
+    timerActive,
+    timeLeft,
+    timerStartTime,
+    followUpTimerActive,
+    followUpTimer,
+    followUpTimerStartTime,
+    hasRated,
+    showHint
+  ])
 
   // Restore flashcard progress from localStorage
   const restoreFlashcardProgress = useCallback(() => {
@@ -92,6 +161,59 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setIncorrectCount(progress.incorrectCount || 0)
           setFlashcardResults(progress.flashcardResults || [])
           setCompletedSubtopics(progress.completedSubtopics || [])
+          setHasStarted(progress.hasStarted || false)
+          
+          // Restore current flashcard if it exists
+          if (progress.currentFlashcard) {
+            setCurrentFlashcard(progress.currentFlashcard)
+          }
+          
+          // Restore UI states
+          setShowAnswer(progress.showAnswer || false)
+          setRating(progress.rating || null)
+          setDifficulty(progress.difficulty || null)
+          setFollowUpQuestion(progress.followUpQuestion || null)
+          setSelectedOption(progress.selectedOption || null)
+          setSubmitResult(progress.submitResult || null)
+          setHasRated(progress.hasRated || false)
+          setShowHint(progress.showHint || false)
+          
+          // Restore timer states with time calculation
+          if (progress.timerStartTime && progress.timerActive && progress.timeLeft) {
+            const elapsed = Math.floor((Date.now() - progress.timerStartTime) / 1000)
+            const remaining = Math.max(0, progress.timeLeft - elapsed)
+            setTimeLeft(remaining)
+            setTimerActive(remaining > 0)
+            if (remaining > 0) {
+              setTimerStartTime(progress.timerStartTime)
+            } else {
+              // Timer expired during reload, auto-reveal answer
+              setShowAnswer(true)
+              setTimerActive(false)
+            }
+          } else {
+            setTimeLeft(progress.timeLeft || 30)
+            setTimerActive(progress.timerActive || false)
+            setTimerStartTime(progress.timerStartTime || null)
+          }
+          
+          // Restore follow-up timer states
+          if (progress.followUpTimerStartTime && progress.followUpTimerActive && progress.followUpTimer) {
+            const elapsed = Math.floor((Date.now() - progress.followUpTimerStartTime) / 1000)
+            const remaining = Math.max(0, progress.followUpTimer - elapsed)
+            setFollowUpTimer(remaining)
+            setFollowUpTimerActive(remaining > 0)
+            if (remaining > 0) {
+              setFollowUpTimerStartTime(progress.followUpTimerStartTime)
+            } else {
+              setFollowUpTimerActive(false)
+            }
+          } else {
+            setFollowUpTimer(progress.followUpTimer || 60)
+            setFollowUpTimerActive(progress.followUpTimerActive || false)
+            setFollowUpTimerStartTime(progress.followUpTimerStartTime || null)
+          }
+          
           // If we've completed 6 flashcards, show continue prompt
           if (progress.flashcardCount >= 6) {
             setShowContinuePrompt(true)
@@ -112,11 +234,36 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   // Save progress whenever it changes
   useEffect(() => {
     // Don't save if we're still initializing or if it's a new session with no progress
-    if (initializing || (isNewSession && flashcardCount === 0 && correctCount === 0 && incorrectCount === 0)) {
+    if (initializing || (isNewSession && flashcardCount === 0 && correctCount === 0 && incorrectCount === 0 && !hasStarted)) {
       return
     }
     saveFlashcardProgress()
-  }, [flashcardCount, correctCount, incorrectCount, flashcardResults, completedSubtopics, saveFlashcardProgress, initializing, isNewSession])
+  }, [
+    flashcardCount, 
+    correctCount, 
+    incorrectCount, 
+    flashcardResults, 
+    completedSubtopics, 
+    hasStarted,
+    currentFlashcard,
+    showAnswer,
+    rating,
+    difficulty,
+    followUpQuestion,
+    selectedOption,
+    submitResult,
+    timerActive,
+    timeLeft,
+    timerStartTime,
+    followUpTimerActive,
+    followUpTimer,
+    followUpTimerStartTime,
+    hasRated,
+    showHint,
+    saveFlashcardProgress, 
+    initializing, 
+    isNewSession
+  ])
 
   // Check authentication and initialize session on mount
   useEffect(() => {
@@ -147,6 +294,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setIncorrectCount(0)
           setFlashcardResults([])
           setIsNewSession(true)
+          setHasStarted(false) // Reset hasStarted for new session
           // Clear persisted progress for new session
           localStorage.removeItem(FLASHCARD_STORAGE_KEY)
         } else {
@@ -197,9 +345,11 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     setSubmitResult(null)
     setTimeLeft(30)
     setTimerActive(true)
+    setTimerStartTime(Date.now())
     setHasRated(false)
     setFollowUpTimer(60)
     setFollowUpTimerActive(false)
+    setFollowUpTimerStartTime(null)
     setShowHint(false)
     // Reset score counters only when starting a new session (isNewSession is true)
     if (isNewSession && flashcardCount === 0) {
@@ -241,6 +391,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setIncorrectCount(0)
           setFlashcardResults([])
           setIsNewSession(true)
+          setHasStarted(false)
           // Clear persisted progress for new session
           localStorage.removeItem(FLASHCARD_STORAGE_KEY)
           // Try loading again with a small delay to ensure session is saved
@@ -344,6 +495,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
             setIncorrectCount(0)
             setFlashcardResults([])
             setIsNewSession(true)
+            setHasStarted(false)
             // Retry loading flashcard
             const retryData = await fetchRandomFlashcardJson(token)
             if (retryData && 'flashcard' in retryData) {
@@ -363,6 +515,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
               setIncorrectCount(0)
               setFlashcardResults([])
               setIsNewSession(true)
+              setHasStarted(false)
               const newData = await fetchRandomFlashcardJson(token)
               if (newData && 'flashcard' in newData) {
                 setCurrentFlashcard(newData as FlashcardData)
@@ -408,6 +561,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setIncorrectCount(0)
           setFlashcardResults([])
           setIsNewSession(true)
+          setHasStarted(false)
           // Clear persisted progress for new session
           localStorage.removeItem(FLASHCARD_STORAGE_KEY)
           // Clear day shift timer flag for new session
@@ -430,13 +584,13 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     }
   }, [loadFlashcard, navigate])
 
-  // Initial load
+  // Initial load - only if hasStarted is true and no currentFlashcard exists
   useEffect(() => {
     const token = getAuthToken()
-    if (token && sessionSubtopics.length > 0) {
+    if (token && sessionSubtopics.length > 0 && hasStarted && !currentFlashcard) {
       loadFlashcard()
     }
-  }, [sessionSubtopics.length, loadFlashcard])
+  }, [sessionSubtopics.length, hasStarted, currentFlashcard, loadFlashcard])
 
   const loadFollowUpQuestion = useCallback(async (topicId: string, diff: string, subTopic?: string, flashcardQuestionId?: string) => {
     try {
@@ -449,6 +603,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       // Start timer for follow-up question
       setFollowUpTimer(60)
       setFollowUpTimerActive(true)
+      setFollowUpTimerStartTime(Date.now())
     } catch (err) {
       // Handle 404 errors gracefully - no follow-up question available, skip it
       const error = err as Error & { status?: number }
@@ -501,6 +656,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           // Auto-reveal answer when time runs out
           setShowAnswer(true)
           setTimerActive(false)
+          setTimerStartTime(null)
           // Auto-rate as 1 if user didn't rate
           if (!hasRated && rating === null && currentFlashcard) {
             // Use submitRating directly - it's defined before this useEffect
@@ -518,9 +674,20 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   }, [currentFlashcard, showAnswer, followUpQuestion, timeLeft, timerActive, hasRated, rating, submitRating])
 
   const handleAutoSubmitAnswer = useCallback(async () => {
-    if (!followUpQuestion || !currentFlashcard) return
+    // Get current values from refs to avoid stale closure
+    const currentFlashcardData = currentFlashcardRef.current
+    const currentFollowUp = followUpQuestionRef.current
+    const currentDifficulty = difficultyRef.current || 'medium'
+    const currentCompletedSubtopics = completedSubtopicsRef.current
+    const currentFlashcardCount = flashcardCountRef.current
+    
+    if (!currentFollowUp || !currentFlashcardData) {
+      setLoading(false)
+      return
+    }
 
     setFollowUpTimerActive(false)
+    setFollowUpTimerStartTime(null)
     setLoading(true)
     
     try {
@@ -529,32 +696,32 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       setIncorrectCount((prev) => prev + 1)
 
       // Store individual result for timeout case
-      const correctAnswerKey = followUpQuestion.key || 'A'
+      const correctAnswerKey = currentFollowUp.key || 'A'
       const result = {
-        flashcardQuestion: currentFlashcard.flashcard,
-        flashcardAnswer: currentFlashcard.flashcardAnswer || '',
-        followUpQuestion: followUpQuestion.question,
-        followUpOptions: followUpQuestion.options,
+        flashcardQuestion: currentFlashcardData.flashcard,
+        flashcardAnswer: currentFlashcardData.flashcardAnswer || '',
+        followUpQuestion: currentFollowUp.question,
+        followUpOptions: currentFollowUp.options,
         selectedOption: null, // No answer selected (timeout)
         correctAnswer: `Option ${correctAnswerKey}`,
-        explanation: followUpQuestion.explanation || 'Time ran out. No answer was submitted.',
+        explanation: currentFollowUp.explanation || 'Time ran out. No answer was submitted.',
         correct: false,
-        difficulty: difficulty || 'medium',
-        topic: currentFlashcard.topic
+        difficulty: currentDifficulty,
+        topic: currentFlashcardData.topic
       }
       setFlashcardResults((prev) => [...prev, result])
 
       // Mark subtopic as completed
-      if (currentFlashcard.subTopic && !completedSubtopics.includes(currentFlashcard.subTopic)) {
-        setCompletedSubtopics([...completedSubtopics, currentFlashcard.subTopic])
+      if (currentFlashcardData.subTopic && !currentCompletedSubtopics.includes(currentFlashcardData.subTopic)) {
+        setCompletedSubtopics([...currentCompletedSubtopics, currentFlashcardData.subTopic])
       }
 
       // Increment flashcard count
-      const newCount = flashcardCount + 1
+      const newCount = currentFlashcardCount + 1
       setFlashcardCount(newCount)
 
       // If we've completed 6 flashcards, show continue prompt and start day shift timer
-      if (newCount === 6) {
+      if (newCount >= 6) {
         setShowContinuePrompt(true)
         // Start day shift timer after completing batch of 6 flashcards
         localStorage.setItem('hasAttemptedFlashcard', 'true')
@@ -562,11 +729,10 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         // Dispatch custom event to notify Navbar immediately
         window.dispatchEvent(new Event('flashcardAttempted'))
         // Create a result object for display purposes
-        const correctAnswerKey = followUpQuestion.key || 'A'
         setSubmitResult({
           correct: false,
           correctAnswer: `Option ${correctAnswerKey}`,
-          explanation: followUpQuestion.explanation || 'Time ran out. No answer was submitted.'
+          explanation: currentFollowUp.explanation || 'Time ran out. No answer was submitted.'
         })
         // Clear follow-up question state
         setFollowUpQuestion(null)
@@ -580,7 +746,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         setError(null)
         await loadFlashcard()
       }
-    } catch {
+    } catch (err) {
+      console.error('Error in auto submit:', err)
       // If there's an error loading next flashcard, just clear states and try again
       setError(null)
       setFollowUpQuestion(null)
@@ -590,7 +757,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     } finally {
       setLoading(false)
     }
-  }, [followUpQuestion, currentFlashcard, completedSubtopics, flashcardCount, loadFlashcard, difficulty])
+  }, [loadFlashcard])
 
   // Timer countdown for follow-up question - 60 seconds
   useEffect(() => {
@@ -603,7 +770,27 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         if (prev <= 1) {
           // Time's up - auto submit with no answer (marks as wrong)
           setFollowUpTimerActive(false)
-          handleAutoSubmitAnswer()
+          setFollowUpTimerStartTime(null)
+          // Call handleAutoSubmitAnswer asynchronously to ensure it executes
+          setTimeout(() => {
+            handleAutoSubmitAnswer().catch(err => {
+              console.error('Error in auto submit:', err)
+              // Fallback: manually move to next flashcard
+              if (currentFlashcard) {
+                setIncorrectCount((prev) => prev + 1)
+                const newCount = flashcardCount + 1
+                setFlashcardCount(newCount)
+                if (newCount >= 6) {
+                  setShowContinuePrompt(true)
+                } else {
+                  setFollowUpQuestion(null)
+                  setSelectedOption(null)
+                  setSubmitResult(null)
+                  loadFlashcard()
+                }
+              }
+            })
+          }, 0)
           return 0
         }
         return prev - 1
@@ -611,7 +798,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [followUpQuestion, followUpTimerActive, submitResult, followUpTimer, handleAutoSubmitAnswer])
+  }, [followUpQuestion, followUpTimerActive, submitResult, followUpTimer, handleAutoSubmitAnswer, currentFlashcard, flashcardCount, loadFlashcard])
 
   const handleRating = async (ratingValue: number) => {
     if (hasRated || !timerActive) return // Prevent rating after timeout
@@ -620,6 +807,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     setRating(ratingValue)
     setShowAnswer(true)
     setTimerActive(false)
+    setTimerStartTime(null)
     await submitRating(ratingValue)
   }
 
@@ -628,6 +816,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
 
     // Stop timer when user submits manually
     setFollowUpTimerActive(false)
+    setFollowUpTimerStartTime(null)
     setLoading(true)
     try {
       const token = getAuthToken()
@@ -754,6 +943,68 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     return (
       <div className={`flashcard-system ${className}`}>
         <Loader message="Initializing flashcard session..." />
+      </div>
+    )
+  }
+
+  // Show start screen if session is initialized but user hasn't started yet
+  if (!hasStarted && sessionSubtopics.length > 0 && !currentFlashcard) {
+    return (
+      <div className={`flashcard-system ${className}`}>
+        <div style={{
+          background: 'white',
+          padding: '48px 32px',
+          borderRadius: '16px',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+          textAlign: 'center',
+          maxWidth: '600px',
+          margin: '0 auto'
+        }}>
+          <h2 style={{
+            fontSize: '32px',
+            fontWeight: 700,
+            marginBottom: '16px',
+            color: '#0369a1'
+          }}>
+            Ready to Start?
+          </h2>
+          <p style={{
+            fontSize: '18px',
+            color: '#64748b',
+            marginBottom: '32px',
+            lineHeight: 1.6
+          }}>
+            You'll complete 6 flashcards in this session. Each flashcard includes a concept review and a follow-up question to test your understanding.
+          </p>
+          <button
+            className="btn"
+            onClick={() => {
+              setHasStarted(true)
+              loadFlashcard()
+            }}
+            style={{
+              background: '#0369a1',
+              color: 'white',
+              border: 'none',
+              fontSize: '20px',
+              padding: '16px 48px',
+              borderRadius: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#0284c7'
+              e.currentTarget.style.transform = 'scale(1.05)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = '#0369a1'
+              e.currentTarget.style.transform = 'scale(1)'
+            }}
+          >
+            Start Flashcards
+          </button>
+        </div>
       </div>
     )
   }
@@ -1064,11 +1315,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
             {submitResult.correct ? 'Correct!' : 'Incorrect'}
           </h3>
 
-          {!submitResult.correct && (
-            <p style={{ textAlign: 'center', marginBottom: '16px', fontSize: '16px' }}>
-              Correct Answer: <strong>{submitResult.correctAnswer}</strong>
-            </p>
-          )}
+          <p style={{ textAlign: 'center', marginBottom: '16px', fontSize: '16px' }}>
+            Correct Answer: <strong>{submitResult.correctAnswer}</strong>
+          </p>
 
           <div style={{ 
             background: '#f9fafb', 
@@ -1280,9 +1529,30 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
                         }}>
                           Flashcard:
                         </h5>
-                        <div style={{ fontSize: '14px', lineHeight: 1.6 }}>
+                        <div style={{ fontSize: '14px', lineHeight: 1.6, marginBottom: '8px' }}>
                           {renderText(result.flashcardQuestion)}
                         </div>
+                        {result.flashcardAnswer && (
+                          <div style={{
+                            background: '#ecfdf5',
+                            border: '1px solid #059669',
+                            padding: '12px',
+                            borderRadius: '8px',
+                            marginTop: '8px'
+                          }}>
+                            <h6 style={{
+                              marginBottom: '6px',
+                              fontSize: '13px',
+                              fontWeight: 600,
+                              color: '#059669'
+                            }}>
+                              Answer:
+                            </h6>
+                            <div style={{ fontSize: '14px', lineHeight: 1.6 }}>
+                              {renderText(result.flashcardAnswer)}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Follow-up Question */}
