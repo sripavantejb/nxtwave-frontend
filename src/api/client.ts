@@ -108,13 +108,20 @@ async function request<T>(
       console.error(errorMsg)
       throw new Error(errorMsg)
     }
-    // Suppress error logging for 404 on reset-shown and follow-up question endpoints (expected if not deployed or no questions available)
+    // Suppress error logging for 404/CORS on reset-shown, follow-up questions, and batch endpoints (expected if not deployed or CORS issues)
     const error = err as Error & { status?: number }
+    const errorMessage = error?.message?.toLowerCase() || ''
+    const isBatchEndpoint = path.includes('/check-new-batch') || path.includes('/create-new-batch')
     const isExpected404 = (path.includes('/reset-shown') || path.includes('/question/followup')) && 
-                          (error?.status === 404 || error?.message?.toLowerCase().includes('not found') || 
-                           error?.message?.toLowerCase().includes('no follow-up questions available'))
+                          (error?.status === 404 || errorMessage.includes('not found') || 
+                           errorMessage.includes('no follow-up questions available'))
+    const isCorsOrNetworkError = errorMessage.includes('failed to fetch') || 
+                                 errorMessage.includes('cors') ||
+                                 errorMessage.includes('networkerror') ||
+                                 (error?.name === 'TypeError' && errorMessage.includes('fetch'))
+    const isBatchError = isBatchEndpoint && (error?.status === 404 || isCorsOrNetworkError)
     
-    if (import.meta.env.DEV && !isExpected404) {
+    if (import.meta.env.DEV && !isExpected404 && !isBatchError) {
       console.error('Request error:', err)
     }
     throw err as Error
@@ -467,28 +474,53 @@ export function logout(): void {
 /**
  * Check if new batch is available after day shift completion
  * Requires JWT authentication
+ * Returns { available: false } on any error (CORS, 404, network failure) to fail gracefully
  */
 export async function checkNewBatch(token: string): Promise<{ available: boolean, message?: string }> {
-  return request<{ available: boolean, message?: string }>(
-    '/api/flashcards/check-new-batch',
-    undefined,
-    { token }
-  )
+  try {
+    return await request<{ available: boolean, message?: string }>(
+      '/api/flashcards/check-new-batch',
+      undefined,
+      { token }
+    )
+  } catch (err) {
+    // Handle CORS/network/404 errors gracefully - endpoint may not be deployed yet
+    // Return safe default so UI continues working
+    return { available: false }
+  }
 }
 
 /**
  * Create a new batch after day shift completion
  * Requires JWT authentication
+ * Handles CORS/network errors gracefully - throws user-friendly error if endpoint unavailable
  */
 export async function createNewBatch(token: string): Promise<SessionResponse & { message?: string }> {
-  return request<SessionResponse & { message?: string }>(
-    '/api/flashcards/create-new-batch',
-    undefined,
-    {
-      method: 'POST',
-      token
+  try {
+    return await request<SessionResponse & { message?: string }>(
+      '/api/flashcards/create-new-batch',
+      undefined,
+      {
+        method: 'POST',
+        token
+      }
+    )
+  } catch (err) {
+    // Handle CORS/network/404 errors gracefully
+    const error = err as Error & { status?: number }
+    const errorMessage = error?.message?.toLowerCase() || ''
+    const isCorsOrNetworkError = errorMessage.includes('failed to fetch') || 
+                                 errorMessage.includes('cors') ||
+                                 errorMessage.includes('networkerror') ||
+                                 (error?.name === 'TypeError' && errorMessage.includes('fetch'))
+    
+    if (error?.status === 404 || isCorsOrNetworkError) {
+      // Endpoint may not be deployed yet - throw user-friendly error
+      throw new Error('Batch creation endpoint is not available. Please try again later.')
     }
-  )
+    // Re-throw other errors as-is
+    throw err
+  }
 }
 
 
