@@ -63,6 +63,61 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   }>>([])
   const [isNewSession, setIsNewSession] = useState(true)
 
+  // localStorage keys for flashcard progress
+  const FLASHCARD_STORAGE_KEY = 'nxtquiz_flashcardProgress'
+
+  // Save flashcard progress to localStorage
+  const saveFlashcardProgress = useCallback(() => {
+    const progress = {
+      flashcardCount,
+      correctCount,
+      incorrectCount,
+      flashcardResults,
+      completedSubtopics,
+      timestamp: Date.now()
+    }
+    localStorage.setItem(FLASHCARD_STORAGE_KEY, JSON.stringify(progress))
+  }, [flashcardCount, correctCount, incorrectCount, flashcardResults, completedSubtopics])
+
+  // Restore flashcard progress from localStorage
+  const restoreFlashcardProgress = useCallback(() => {
+    const stored = localStorage.getItem(FLASHCARD_STORAGE_KEY)
+    if (stored) {
+      try {
+        const progress = JSON.parse(stored)
+        // Only restore if data is less than 1 hour old (session should still be active)
+        if (progress.timestamp && Date.now() - progress.timestamp < 3600000) {
+          setFlashcardCount(progress.flashcardCount || 0)
+          setCorrectCount(progress.correctCount || 0)
+          setIncorrectCount(progress.incorrectCount || 0)
+          setFlashcardResults(progress.flashcardResults || [])
+          setCompletedSubtopics(progress.completedSubtopics || [])
+          // If we've completed 6 flashcards, show continue prompt
+          if (progress.flashcardCount >= 6) {
+            setShowContinuePrompt(true)
+          }
+          return true // Indicates progress was restored
+        } else {
+          // Clear old data
+          localStorage.removeItem(FLASHCARD_STORAGE_KEY)
+        }
+      } catch (err) {
+        console.error('Error parsing stored flashcard progress:', err)
+        localStorage.removeItem(FLASHCARD_STORAGE_KEY)
+      }
+    }
+    return false // No progress restored
+  }, [])
+
+  // Save progress whenever it changes
+  useEffect(() => {
+    // Don't save if we're still initializing or if it's a new session with no progress
+    if (initializing || (isNewSession && flashcardCount === 0 && correctCount === 0 && incorrectCount === 0)) {
+      return
+    }
+    saveFlashcardProgress()
+  }, [flashcardCount, correctCount, incorrectCount, flashcardResults, completedSubtopics, saveFlashcardProgress, initializing, isNewSession])
+
   // Check authentication and initialize session on mount
   useEffect(() => {
     const token = getAuthToken()
@@ -71,26 +126,42 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       return
     }
 
+    // Try to restore progress first
+    const progressRestored = restoreFlashcardProgress()
+
     // Initialize session
     const initSession = async (forceNew = false) => {
       setInitializing(true)
       try {
         const session = await startFlashcardSession(token, forceNew)
         setSessionSubtopics(session.sessionSubtopics)
-        // Reset flashcard count for new session
-        setFlashcardCount(0)
-        setCompletedSubtopics([]) // Reset completed subtopics for new session
-        setShowContinuePrompt(false)
-        // Reset score counters and results for new session
-        setCorrectCount(0)
-        setIncorrectCount(0)
-        setFlashcardResults([])
-        setIsNewSession(true)
+        
+        // Only reset progress if it's a truly new session (not a page refresh)
+        if (forceNew || !progressRestored) {
+          // Reset flashcard count for new session
+          setFlashcardCount(0)
+          setCompletedSubtopics([]) // Reset completed subtopics for new session
+          setShowContinuePrompt(false)
+          // Reset score counters and results for new session
+          setCorrectCount(0)
+          setIncorrectCount(0)
+          setFlashcardResults([])
+          setIsNewSession(true)
+          // Clear persisted progress for new session
+          localStorage.removeItem(FLASHCARD_STORAGE_KEY)
+        } else {
+          // Progress was restored, so this is not a new session
+          setIsNewSession(false)
+        }
+        
         // Clear day shift timer flag for new session - timer should only start after completing batch of 6
-        localStorage.removeItem('hasAttemptedFlashcard')
-        localStorage.removeItem('batchCompletionTime')
-        // Dispatch event to notify Navbar that flag was cleared
-        window.dispatchEvent(new Event('flashcardAttempted'))
+        // Only clear if it's a truly new session
+        if (forceNew || !progressRestored) {
+          localStorage.removeItem('hasAttemptedFlashcard')
+          localStorage.removeItem('batchCompletionTime')
+          // Dispatch event to notify Navbar that flag was cleared
+          window.dispatchEvent(new Event('flashcardAttempted'))
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to initialize session')
       } finally {
@@ -99,7 +170,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     }
 
     initSession()
-  }, [navigate])
+  }, [navigate, restoreFlashcardProgress])
 
   // Load next flashcard with priority logic
   const loadFlashcard = useCallback(async () => {
@@ -170,6 +241,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setIncorrectCount(0)
           setFlashcardResults([])
           setIsNewSession(true)
+          // Clear persisted progress for new session
+          localStorage.removeItem(FLASHCARD_STORAGE_KEY)
           // Try loading again with a small delay to ensure session is saved
           await new Promise(resolve => setTimeout(resolve, 100))
           const newData = await fetchRandomFlashcardJson(token)
@@ -335,6 +408,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setIncorrectCount(0)
           setFlashcardResults([])
           setIsNewSession(true)
+          // Clear persisted progress for new session
+          localStorage.removeItem(FLASHCARD_STORAGE_KEY)
           // Clear day shift timer flag for new session
           localStorage.removeItem('hasAttemptedFlashcard')
           localStorage.removeItem('batchCompletionTime')
@@ -652,6 +727,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       timestamp: Date.now()
     }
     localStorage.setItem('flashcardSessionAccuracy', JSON.stringify(accuracyData))
+    
+    // Clear persisted flashcard progress when session completes
+    localStorage.removeItem(FLASHCARD_STORAGE_KEY)
     
     // Navigate to home page with accuracy data
     navigate('/', { state: accuracyData })

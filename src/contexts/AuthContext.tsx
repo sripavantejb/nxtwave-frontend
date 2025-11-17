@@ -44,6 +44,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [])
 
+  // Clear all user-specific localStorage data
+  const clearUserData = () => {
+    // Clear flashcard progress
+    localStorage.removeItem('nxtquiz_flashcardProgress')
+    // Clear flashcard session accuracy
+    localStorage.removeItem('flashcardSessionAccuracy')
+    // Clear quiz results
+    localStorage.removeItem('nxtquiz_lastResults')
+    // Clear flashcard attempt flags
+    localStorage.removeItem('hasAttemptedFlashcard')
+    localStorage.removeItem('batchCompletionTime')
+    localStorage.removeItem('dayShiftCompleted')
+    localStorage.removeItem('dayShiftCompletedTime')
+    // Clear all quiz storage (using pattern matching for all quiz-related keys)
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && (key.startsWith('nxtquiz_') || key.startsWith('guidelines_accepted_'))) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key))
+  }
+
   const checkAuthWithToken = async (authToken: string) => {
     try {
       const profile = await getProfile(authToken)
@@ -54,7 +78,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       })
       setToken(authToken)
     } catch (error) {
-      // Token is invalid, clear it
+      // Token is invalid, clear it and all user data
+      clearUserData()
       localStorage.removeItem('authToken')
       localStorage.removeItem('token')
       setToken(null)
@@ -66,6 +91,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const login = async (email: string, password: string) => {
     try {
+      // Clear previous user's data before logging in
+      clearUserData()
       const response = await apiLogin(email, password)
       localStorage.setItem('authToken', response.token)
       setToken(response.token)
@@ -77,6 +104,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const register = async (name: string, email: string, password: string) => {
     try {
+      // Clear previous user's data before registering
+      clearUserData()
       const response = await apiRegister(name, email, password)
       localStorage.setItem('authToken', response.token)
       setToken(response.token)
@@ -87,6 +116,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   const logout = () => {
+    // Clear user data on logout
+    clearUserData()
     apiLogout()
     setToken(null)
     setUser(null)
