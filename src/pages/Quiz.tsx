@@ -137,6 +137,8 @@ export default function Quiz() {
     // Clear guidelines acceptance so user must accept again for retakes
     const acceptanceKey = `guidelines_accepted_${topicId}_${rating}`
     localStorage.removeItem(acceptanceKey)
+    // Clear persisted results when starting a new quiz
+    localStorage.removeItem('nxtquiz_lastResults')
   }, [topicId, rating, getStorageKey])
 
   const enterFullscreen = useCallback(() => {
@@ -226,6 +228,8 @@ export default function Quiz() {
 
     // Fetch new quiz if no saved state
     setLoading(true)
+    // Clear persisted results when starting a new quiz
+    localStorage.removeItem('nxtquiz_lastResults')
     fetchQuiz(topicId, Number(rating))
       .then(data => { 
         setQuestions(data.questions)

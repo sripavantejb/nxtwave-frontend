@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { FaCheck, FaTimes } from 'react-icons/fa'
 import { renderText } from '../components/renderText'
@@ -12,14 +13,56 @@ type Detail = {
   difficulty: 'easy' | 'medium' | 'hard'
 }
 
+type ResultsState = {
+  score: number
+  total: number
+  details: Detail[]
+  timestamp?: number
+}
+
+const RESULTS_STORAGE_KEY = 'nxtquiz_lastResults'
+
 export default function Results() {
   const navigate = useNavigate()
   const location = useLocation()
-  const state = location.state as { score: number, total: number, details: Detail[] } | null
+  const [resultsState, setResultsState] = useState<ResultsState | null>(null)
 
-  
+  useEffect(() => {
+    // First, check if we have state from navigation
+    const navigationState = location.state as ResultsState | null
+    
+    if (navigationState && navigationState.score !== undefined) {
+      // Save to localStorage when received via navigation
+      const stateToSave: ResultsState = {
+        ...navigationState,
+        timestamp: Date.now()
+      }
+      localStorage.setItem(RESULTS_STORAGE_KEY, JSON.stringify(stateToSave))
+      setResultsState(navigationState)
+      // Clear navigation state to prevent showing again on refresh
+      window.history.replaceState({}, document.title)
+    } else {
+      // Check localStorage if location.state is missing (e.g., on refresh)
+      const stored = localStorage.getItem(RESULTS_STORAGE_KEY)
+      if (stored) {
+        try {
+          const data = JSON.parse(stored) as ResultsState
+          // Only restore if data is less than 24 hours old
+          if (data.timestamp && Date.now() - data.timestamp < 86400000) {
+            setResultsState(data)
+          } else {
+            // Clear old data
+            localStorage.removeItem(RESULTS_STORAGE_KEY)
+          }
+        } catch (err) {
+          console.error('Error parsing stored results data:', err)
+          localStorage.removeItem(RESULTS_STORAGE_KEY)
+        }
+      }
+    }
+  }, [location.state])
 
-  if (!state) {
+  if (!resultsState) {
     return (
       <div style={{ padding: 24 }}>
         <div className="card">
@@ -32,7 +75,7 @@ export default function Results() {
     )
   }
 
-  const { score, total, details } = state
+  const { score, total, details } = resultsState
 
   return (
     <div style={{ padding: 24, maxWidth: 900, margin: '0 auto' }}>
