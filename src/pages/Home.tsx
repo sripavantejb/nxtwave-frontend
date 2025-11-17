@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { FaLightbulb, FaChartLine, FaTrophy, FaTimes, FaCheckCircle } from 'react-icons/fa'
 import FlashcardSystem from '../components/FlashcardSystem'
+import { checkNewBatch, createNewBatch } from '../api/client'
+import { getAuthToken } from '../contexts/AuthContext'
 
 interface AccuracyData {
   accuracy: number
@@ -13,9 +15,11 @@ interface AccuracyData {
 
 export default function Home() {
   const location = useLocation()
+  const navigate = useNavigate()
   const [accuracyData, setAccuracyData] = useState<AccuracyData | null>(null)
   const [showAccuracyPanel, setShowAccuracyPanel] = useState(false)
   const [showNewBatchNotification, setShowNewBatchNotification] = useState(false)
+  const [newBatchMessage, setNewBatchMessage] = useState<string>('')
 
   useEffect(() => {
     // Check navigation state first
@@ -51,25 +55,38 @@ export default function Home() {
       }
     }
 
-    // Check for day shift completion
-    const checkDayShiftCompleted = () => {
-      const dayShiftCompleted = localStorage.getItem('dayShiftCompleted') === 'true'
-      if (dayShiftCompleted) {
-        setShowNewBatchNotification(true)
+    // Check for new batch availability using API
+    const checkForNewBatch = async () => {
+      const token = getAuthToken()
+      if (!token) return
+
+      try {
+        const result = await checkNewBatch(token)
+        if (result.available) {
+          setShowNewBatchNotification(true)
+          setNewBatchMessage(result.message || 'New batch available!')
+        }
+      } catch (err) {
+        // Silently fail - user might not be logged in or endpoint might not be available
+        console.error('Error checking new batch:', err)
       }
     }
 
     // Check on mount
-    checkDayShiftCompleted()
+    checkForNewBatch()
+
+    // Set up interval to check every 30 seconds
+    const intervalId = setInterval(checkForNewBatch, 30000)
 
     // Listen for day shift completion event
     const handleDayShiftCompleted = () => {
-      setShowNewBatchNotification(true)
+      checkForNewBatch()
     }
 
     window.addEventListener('dayShiftCompleted', handleDayShiftCompleted)
 
     return () => {
+      clearInterval(intervalId)
       window.removeEventListener('dayShiftCompleted', handleDayShiftCompleted)
     }
   }, [location.state])
@@ -79,17 +96,34 @@ export default function Home() {
     localStorage.removeItem('flashcardSessionAccuracy')
   }
 
-  const handleStartNewBatch = () => {
-    // Clear the day shift completed flag
-    localStorage.removeItem('dayShiftCompleted')
-    localStorage.removeItem('dayShiftCompletedTime')
-    setShowNewBatchNotification(false)
-    // Scroll to flashcard section and trigger new session
-    const flashcardSection = document.getElementById('flashcard-learning')
-    if (flashcardSection) {
-      flashcardSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      // Dispatch event to trigger new session in FlashcardSystem
-      window.dispatchEvent(new Event('startNewBatchAfterDayShift'))
+  const handleStartNewBatch = async () => {
+    const token = getAuthToken()
+    if (!token) {
+      navigate('/login')
+      return
+    }
+
+    try {
+      // Create new batch via API
+      const result = await createNewBatch(token)
+      setShowNewBatchNotification(false)
+      setNewBatchMessage('')
+      
+      // Scroll to flashcard section and trigger new session
+      const flashcardSection = document.getElementById('flashcard-learning')
+      if (flashcardSection) {
+        flashcardSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        // Dispatch event to trigger new session in FlashcardSystem
+        window.dispatchEvent(new Event('startNewBatchAfterDayShift'))
+      }
+    } catch (err) {
+      console.error('Error creating new batch:', err)
+      setShowNewBatchNotification(false)
+      // Still scroll to flashcard section
+      const flashcardSection = document.getElementById('flashcard-learning')
+      if (flashcardSection) {
+        flashcardSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
     }
   }
 
@@ -148,7 +182,7 @@ export default function Home() {
                 margin: 0,
                 lineHeight: 1.5
               }}>
-                Your day shift has completed. A new batch of flashcards is available, including questions you answered incorrectly in the previous session.
+                {newBatchMessage || 'Your day shift has completed. A new batch of flashcards is available, including questions you answered incorrectly in the previous session.'}
               </p>
             </div>
             <div style={{

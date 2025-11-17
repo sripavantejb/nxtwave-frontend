@@ -462,4 +462,31 @@ export function logout(): void {
   localStorage.removeItem('user')
 }
 
+/**
+ * Check if new batch is available after day shift completion
+ * Requires JWT authentication
+ */
+export async function checkNewBatch(token: string): Promise<{ available: boolean, message?: string }> {
+  return request<{ available: boolean, message?: string }>(
+    '/api/flashcards/check-new-batch',
+    undefined,
+    { token }
+  )
+}
+
+/**
+ * Create a new batch after day shift completion
+ * Requires JWT authentication
+ */
+export async function createNewBatch(token: string): Promise<SessionResponse & { message?: string }> {
+  return request<SessionResponse & { message?: string }>(
+    '/api/flashcards/create-new-batch',
+    undefined,
+    {
+      method: 'POST',
+      token
+    }
+  )
+}
+
 

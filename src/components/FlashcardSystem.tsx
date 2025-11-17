@@ -108,6 +108,13 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       return
     }
 
+    // Stop loading if we've completed 6 flashcards
+    if (flashcardCount >= 6) {
+      setShowContinuePrompt(true)
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     setError(null)
     setShowAnswer(false)
@@ -304,7 +311,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     } finally {
       setLoading(false)
     }
-  }, [navigate])
+  }, [navigate, flashcardCount, isNewSession])
 
   // Listen for new batch start event after day shift
   useEffect(() => {
@@ -356,6 +363,46 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     }
   }, [sessionSubtopics.length, loadFlashcard])
 
+  const loadFollowUpQuestion = useCallback(async (topicId: string, diff: string, subTopic?: string, flashcardQuestionId?: string) => {
+    try {
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('Authentication required')
+      }
+      const data = await fetchFollowUpQuestion(topicId, diff, subTopic, token, flashcardQuestionId)
+      setFollowUpQuestion(data)
+      // Start timer for follow-up question
+      setFollowUpTimer(60)
+      setFollowUpTimerActive(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load follow-up question')
+    }
+  }, [])
+
+  const submitRating = useCallback(async (ratingValue: number) => {
+    if (!currentFlashcard) return
+
+    try {
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('Authentication required')
+      }
+
+      const data = await submitFlashcardRating(currentFlashcard.questionId, ratingValue, token)
+      setDifficulty(data.difficulty)
+
+      // Load follow-up question with subtopic and flashcard linkage
+      await loadFollowUpQuestion(
+        currentFlashcard.topicId,
+        data.difficulty,
+        currentFlashcard.subTopic,
+        currentFlashcard.questionId
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to submit rating')
+    }
+  }, [currentFlashcard, loadFollowUpQuestion])
+
   // Timer countdown - enforce 30 seconds
   useEffect(() => {
     if (!currentFlashcard || showAnswer || followUpQuestion || !timerActive || timeLeft <= 0) {
@@ -369,8 +416,11 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setShowAnswer(true)
           setTimerActive(false)
           // Auto-rate as 1 if user didn't rate
-          if (!hasRated && rating === null) {
-            handleAutoRate()
+          if (!hasRated && rating === null && currentFlashcard) {
+            // Use submitRating directly - it's defined before this useEffect
+            submitRating(1).catch(err => {
+              console.error('Error auto-rating:', err)
+            })
           }
           return 0
         }
@@ -379,7 +429,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [currentFlashcard, showAnswer, followUpQuestion, timeLeft, timerActive, hasRated, rating])
+  }, [currentFlashcard, showAnswer, followUpQuestion, timeLeft, timerActive, hasRated, rating, submitRating])
 
   const handleAutoSubmitAnswer = useCallback(async () => {
     if (!followUpQuestion || !currentFlashcard) return
@@ -454,7 +504,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     } finally {
       setLoading(false)
     }
-  }, [followUpQuestion, currentFlashcard, completedSubtopics, flashcardCount, loadFlashcard])
+  }, [followUpQuestion, currentFlashcard, completedSubtopics, flashcardCount, loadFlashcard, difficulty])
 
   // Timer countdown for follow-up question - 60 seconds
   useEffect(() => {
@@ -476,54 +526,6 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
 
     return () => clearInterval(timer)
   }, [followUpQuestion, followUpTimerActive, submitResult, followUpTimer, handleAutoSubmitAnswer])
-
-  const loadFollowUpQuestion = useCallback(async (topicId: string, diff: string, subTopic?: string, flashcardQuestionId?: string) => {
-    try {
-      const token = getAuthToken()
-      if (!token) {
-        throw new Error('Authentication required')
-      }
-      const data = await fetchFollowUpQuestion(topicId, diff, subTopic, token, flashcardQuestionId)
-      setFollowUpQuestion(data)
-      // Start timer for follow-up question
-      setFollowUpTimer(60)
-      setFollowUpTimerActive(true)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load follow-up question')
-    }
-  }, [])
-
-  const handleAutoRate = useCallback(async () => {
-    if (!currentFlashcard || hasRated) return
-    
-    setHasRated(true)
-    setRating(1)
-    await submitRating(1)
-  }, [currentFlashcard, hasRated])
-
-  const submitRating = useCallback(async (ratingValue: number) => {
-    if (!currentFlashcard) return
-
-    try {
-      const token = getAuthToken()
-      if (!token) {
-        throw new Error('Authentication required')
-      }
-
-      const data = await submitFlashcardRating(currentFlashcard.questionId, ratingValue, token)
-      setDifficulty(data.difficulty)
-
-      // Load follow-up question with subtopic and flashcard linkage
-      await loadFollowUpQuestion(
-        currentFlashcard.topicId,
-        data.difficulty,
-        currentFlashcard.subTopic,
-        currentFlashcard.questionId
-      )
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to submit rating')
-    }
-  }, [currentFlashcard, loadFollowUpQuestion])
 
   const handleRating = async (ratingValue: number) => {
     if (hasRated || !timerActive) return // Prevent rating after timeout
@@ -590,14 +592,23 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       setFlashcardCount(newCount)
 
       // If we've completed 6 flashcards, show continue prompt and start day shift timer
-      if (newCount === 6) {
+      if (newCount >= 6) {
         setShowContinuePrompt(true)
         // Start day shift timer after completing batch of 6 flashcards
         localStorage.setItem('hasAttemptedFlashcard', 'true')
         localStorage.setItem('batchCompletionTime', Date.now().toString())
         // Dispatch custom event to notify Navbar immediately
         window.dispatchEvent(new Event('flashcardAttempted'))
+        // Don't load next flashcard - session is complete
+        return
       }
+      
+      // Move to next flashcard if not at limit
+      setFollowUpQuestion(null)
+      setSelectedOption(null)
+      setSubmitResult(null)
+      setError(null)
+      await loadFlashcard()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit answer')
     } finally {
