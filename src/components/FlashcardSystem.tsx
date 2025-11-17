@@ -82,6 +82,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   const difficultyRef = useRef<string | null>(null)
   const completedSubtopicsRef = useRef<string[]>([])
   const flashcardCountRef = useRef(0)
+  const handleStartNewBatchRef = useRef<(() => Promise<void>) | null>(null)
   
   // Update refs when state changes
   useEffect(() => {
@@ -370,6 +371,12 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         const cooldownStatus = await getUserCooldown(token)
         setCooldownTimeRemaining(cooldownStatus.remainingTime)
         setCooldownTimerActive(!cooldownStatus.canStart)
+        // Automatically load new batch if cooldown has expired
+        if (cooldownStatus.canStart && showContinuePrompt && handleStartNewBatchRef.current) {
+          handleStartNewBatchRef.current().catch(err => {
+            console.error('Error auto-loading new batch:', err)
+          })
+        }
       } catch (err) {
         // Fallback to localStorage if server call fails
         const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
@@ -393,6 +400,12 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         if (remaining <= 0) {
           setCooldownTimeRemaining('00:00')
           setCooldownTimerActive(false)
+          // Automatically load new batch when timer expires
+          if (showContinuePrompt && handleStartNewBatchRef.current) {
+            handleStartNewBatchRef.current().catch(err => {
+              console.error('Error auto-loading new batch:', err)
+            })
+          }
         } else {
           const totalSeconds = Math.max(0, Math.floor(remaining / 1000))
           const minutes = Math.floor(totalSeconds / 60)
@@ -435,6 +448,12 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       if (remaining <= 0) {
         setCooldownTimeRemaining('00:00')
         setCooldownTimerActive(false)
+        // Automatically load new batch when timer expires
+        if (showContinuePrompt && handleStartNewBatchRef.current) {
+          handleStartNewBatchRef.current().catch(err => {
+            console.error('Error auto-loading new batch:', err)
+          })
+        }
       } else {
         const totalSeconds = Math.max(0, Math.floor(remaining / 1000))
         const minutes = Math.floor(totalSeconds / 60)
@@ -456,7 +475,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   }, [showContinuePrompt]) // Re-run when showContinuePrompt changes
 
   // Handler for starting new batch
-  const handleStartNewBatch = async () => {
+  const handleStartNewBatch = useCallback(async () => {
     const token = getAuthToken()
     if (!token) {
       navigate('/login')
@@ -541,7 +560,12 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       }
       setLoading(false)
     }
-  }
+  }, [navigate])
+  
+  // Store handleStartNewBatch in ref for use in useEffect
+  useEffect(() => {
+    handleStartNewBatchRef.current = handleStartNewBatch
+  }, [handleStartNewBatch])
 
   // Load next flashcard with priority logic
   const loadFlashcard = useCallback(async () => {
@@ -583,16 +607,26 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
 
     try {
       // Priority 0: Check if we have batch flashcards loaded
-      if (batchFlashcards.length > 0 && currentBatchIndex < batchFlashcards.length) {
-        const flashcard = batchFlashcards[currentBatchIndex]
-        setCurrentFlashcard(flashcard)
-        setCurrentBatchIndex(currentBatchIndex + 1)
-        setSubmitResult(null)
-        setLoading(false)
-        return
+      // When a batch exists, ONLY serve from the batch (strict batch mode)
+      if (batchFlashcards.length > 0) {
+        if (currentBatchIndex < batchFlashcards.length) {
+          // Serve next flashcard from batch
+          const flashcard = batchFlashcards[currentBatchIndex]
+          setCurrentFlashcard(flashcard)
+          setCurrentBatchIndex(currentBatchIndex + 1)
+          setSubmitResult(null)
+          setLoading(false)
+          return
+        } else {
+          // Batch exhausted - should not happen if flashcardCount check works correctly
+          // But if it does, show continue prompt
+          setShowContinuePrompt(true)
+          setLoading(false)
+          return
+        }
       }
       
-      // Priority 1: Check for due reviews
+      // Priority 1: Check for due reviews (only if no batch is loaded)
       try {
         const dueQuestion = await getNextQuestion(token)
         if (dueQuestion && 'flashcard' in dueQuestion) {
