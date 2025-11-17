@@ -32,19 +32,14 @@ export type Flashcard = {
   flashcardAnswer?: string
 }
 
-// Prefer explicit env, otherwise use the hosted backend
+// Prefer explicit env, otherwise use Render API backend
 function getBaseUrl(): string {
   // Check for explicit environment variable first
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL
   }
   
-  // In development, default to hosted backend server
-  if (import.meta.env.DEV) {
-    return 'https://nxtwave-backend-p4cf.onrender.com'
-  }
-  
-  // In production, use the hosted backend server
+  // Use Render API backend for both development and production
   return 'https://nxtwave-backend-p4cf.onrender.com'
 }
 

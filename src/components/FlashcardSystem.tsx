@@ -12,6 +12,7 @@ import {
   startFlashcardSession,
   resetShownFlashcards,
   completeBatch,
+  createNewBatch,
   type FlashcardData,
   type FollowUpQuestion,
   type SubmitResult
@@ -66,6 +67,10 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   const [hasStarted, setHasStarted] = useState(false)
   const [timerStartTime, setTimerStartTime] = useState<number | null>(null)
   const [followUpTimerStartTime, setFollowUpTimerStartTime] = useState<number | null>(null)
+  // Cooldown timer state (5 minutes after batch completion)
+  const [cooldownTimeRemaining, setCooldownTimeRemaining] = useState<string>('00:00')
+  const [cooldownTimerActive, setCooldownTimerActive] = useState(false)
+  const cooldownTimerIntervalRef = useRef<number | null>(null)
   
   // Refs to store current values for timer callback
   const currentFlashcardRef = useRef<FlashcardData | null>(null)
@@ -320,6 +325,174 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
 
     initSession()
   }, [navigate, restoreFlashcardProgress])
+
+  // Initialize cooldown timer on mount if batchCompletionTime exists
+  useEffect(() => {
+    const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
+    if (batchCompletionTimeStr) {
+      const completionTime = parseInt(batchCompletionTimeStr, 10)
+      if (!isNaN(completionTime)) {
+        const targetTime = completionTime + (5 * 60 * 1000)
+        const now = Date.now()
+        const remaining = targetTime - now
+        
+        if (remaining > 0) {
+          // Timer still active
+          const totalSeconds = Math.floor(remaining / 1000)
+          const minutes = Math.floor(totalSeconds / 60)
+          const seconds = totalSeconds % 60
+          setCooldownTimeRemaining(`${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`)
+          setCooldownTimerActive(true)
+        } else {
+          // Timer completed
+          setCooldownTimeRemaining('00:00')
+          setCooldownTimerActive(false)
+        }
+      }
+    }
+  }, []) // Run once on mount
+
+  // Cooldown timer effect (5 minutes after batch completion)
+  useEffect(() => {
+    // Check for existing batch completion time from localStorage
+    const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
+    
+    if (!batchCompletionTimeStr) {
+      // No batch completion time, timer should not be active
+      setCooldownTimerActive(false)
+      setCooldownTimeRemaining('00:00')
+      if (cooldownTimerIntervalRef.current !== null) {
+        clearInterval(cooldownTimerIntervalRef.current)
+        cooldownTimerIntervalRef.current = null
+      }
+      return
+    }
+
+    const completionTime = parseInt(batchCompletionTimeStr, 10)
+    if (isNaN(completionTime)) {
+      setCooldownTimerActive(false)
+      setCooldownTimeRemaining('00:00')
+      return
+    }
+
+    // Calculate target time: completion time + 5 minutes
+    const targetTime = completionTime + (5 * 60 * 1000)
+
+    const calculateTimeString = (remainingMs: number): string => {
+      const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000))
+      const minutes = Math.floor(totalSeconds / 60)
+      const seconds = totalSeconds % 60
+      return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    }
+
+    const updateTimer = () => {
+      const now = Date.now()
+      const remaining = targetTime - now
+
+      if (remaining <= 0) {
+        // Timer completed - keep showing 00:00 until user starts new batch
+        setCooldownTimeRemaining('00:00')
+        setCooldownTimerActive(false)
+        if (cooldownTimerIntervalRef.current !== null) {
+          clearInterval(cooldownTimerIntervalRef.current)
+          cooldownTimerIntervalRef.current = null
+        }
+      } else {
+        // Timer still active
+        setCooldownTimeRemaining(calculateTimeString(remaining))
+        setCooldownTimerActive(true)
+      }
+    }
+
+    // Initial update
+    updateTimer()
+
+    // Set up interval to update every second (only if timer is still active)
+    if (cooldownTimerIntervalRef.current !== null) {
+      clearInterval(cooldownTimerIntervalRef.current)
+    }
+    
+    const now = Date.now()
+    const remaining = targetTime - now
+    if (remaining > 0) {
+      cooldownTimerIntervalRef.current = window.setInterval(updateTimer, 1000)
+    }
+
+    // Cleanup
+    return () => {
+      if (cooldownTimerIntervalRef.current !== null) {
+        clearInterval(cooldownTimerIntervalRef.current)
+        cooldownTimerIntervalRef.current = null
+      }
+    }
+  }, [showContinuePrompt]) // Re-run when showContinuePrompt changes
+
+  // Handler for starting new batch
+  const handleStartNewBatch = async () => {
+    // Only allow if timer has completed (00:00)
+    if (cooldownTimeRemaining !== '00:00') {
+      return
+    }
+
+    const token = getAuthToken()
+    if (!token) {
+      navigate('/login')
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      // Create new batch via API
+      const newSession = await createNewBatch(token)
+      setSessionSubtopics(newSession.sessionSubtopics)
+      
+      // Reset all state for new batch
+      setFlashcardCount(0)
+      setCorrectCount(0)
+      setIncorrectCount(0)
+      setFlashcardResults([])
+      setCompletedSubtopics([])
+      setShowContinuePrompt(false)
+      setCooldownTimerActive(false)
+      setCooldownTimeRemaining('00:00')
+      setIsNewSession(true)
+      setHasStarted(false)
+      
+      // Clear batch completion time
+      localStorage.removeItem('batchCompletionTime')
+      localStorage.removeItem('hasAttemptedFlashcard')
+      
+      // Clear persisted progress
+      localStorage.removeItem(FLASHCARD_STORAGE_KEY)
+      
+      // Clear current flashcard and related state
+      setCurrentFlashcard(null)
+      setShowAnswer(false)
+      setRating(null)
+      setDifficulty(null)
+      setFollowUpQuestion(null)
+      setSelectedOption(null)
+      setSubmitResult(null)
+      setTimerActive(false)
+      setTimeLeft(30)
+      setTimerStartTime(null)
+      setHasRated(false)
+      setFollowUpTimer(60)
+      setFollowUpTimerActive(false)
+      setFollowUpTimerStartTime(null)
+      setShowHint(false)
+      
+      // Dispatch event to notify Navbar
+      window.dispatchEvent(new Event('flashcardAttempted'))
+      
+      setLoading(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create new batch')
+      setLoading(false)
+    }
+  }
 
   // Load next flashcard with priority logic
   const loadFlashcard = useCallback(async () => {
@@ -1066,8 +1239,84 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
 
   return (
     <div className={`flashcard-system ${className}`}>
+      {/* Cooldown Timer - Display at top when batch is completed */}
+      {showContinuePrompt && (cooldownTimerActive || cooldownTimeRemaining === '00:00') && (
+        <div style={{
+          marginBottom: '20px',
+          padding: '16px',
+          background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+          borderRadius: '12px',
+          border: '2px solid #f59e0b',
+          textAlign: 'center',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            marginBottom: '12px'
+          }}>
+            <FaClock style={{ fontSize: '24px', color: '#d97706' }} />
+            <div>
+              <p style={{
+                fontSize: '14px',
+                color: '#92400e',
+                margin: 0,
+                fontWeight: 600,
+                marginBottom: '4px'
+              }}>
+                Next Batch Available In:
+              </p>
+              <p style={{
+                fontSize: '32px',
+                color: '#d97706',
+                margin: 0,
+                fontWeight: 700,
+                fontFamily: 'monospace'
+              }}>
+                {cooldownTimeRemaining}
+              </p>
+            </div>
+          </div>
+          <button
+            className="btn"
+            onClick={handleStartNewBatch}
+            disabled={cooldownTimeRemaining !== '00:00' || loading}
+            style={{
+              background: cooldownTimeRemaining === '00:00' ? '#059669' : '#9ca3af',
+              color: 'white',
+              border: 'none',
+              padding: '12px 24px',
+              borderRadius: '8px',
+              fontSize: '16px',
+              fontWeight: 600,
+              cursor: cooldownTimeRemaining === '00:00' && !loading ? 'pointer' : 'not-allowed',
+              opacity: cooldownTimeRemaining === '00:00' && !loading ? 1 : 0.6,
+              transition: 'all 0.2s',
+              width: '100%',
+              maxWidth: '300px'
+            }}
+            onMouseEnter={(e) => {
+              if (cooldownTimeRemaining === '00:00' && !loading) {
+                e.currentTarget.style.background = '#047857'
+                e.currentTarget.style.transform = 'scale(1.02)'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (cooldownTimeRemaining === '00:00' && !loading) {
+                e.currentTarget.style.background = '#059669'
+                e.currentTarget.style.transform = 'scale(1)'
+              }
+            }}
+          >
+            {loading ? 'Loading...' : cooldownTimeRemaining === '00:00' ? 'Start New Batch' : 'Wait for Timer'}
+          </button>
+        </div>
+      )}
+
       {/* Session Progress */}
-      {sessionSubtopics.length > 0 && (
+      {sessionSubtopics.length > 0 && !showContinuePrompt && (
         <div style={{ 
           marginBottom: '20px', 
           padding: '12px', 
