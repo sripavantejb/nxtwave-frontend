@@ -777,12 +777,22 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     setFollowUpTimerActive(false)
     setFollowUpTimerStartTime(null)
     setShowHint(false)
-    // Reset score counters only when starting a new session (isNewSession is true)
-    if (isNewSession && flashcardCount === 0) {
+    // CRITICAL: Never reset count or counters when on 5th/6th flashcard or batch completion in progress
+    // Reset score counters only when starting a new session (isNewSession is true) AND count is 0
+    // AND we're not in the middle of a batch (count < 4 means we're on 1st-4th flashcard)
+    if (isNewSession && flashcardCount === 0 && !isCompletingBatchRef.current) {
       setCorrectCount(0)
       setIncorrectCount(0)
       setFlashcardResults([])
       setIsNewSession(false)
+    }
+    
+    // CRITICAL: Prevent loading if we're on 5th/6th flashcard (count === 4 or 5) and batch completion is in progress
+    // This is an extra safety check
+    if ((flashcardCount === 4 || flashcardCount === 5) && isCompletingBatchRef.current) {
+      console.log('[loadFlashcard] BLOCKED - on 5th/6th flashcard with batch completion in progress')
+      setLoading(false)
+      return
     }
 
     try {
@@ -1260,9 +1270,11 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   useEffect(() => {
     const token = getAuthToken()
     // Block if: count >= 6, showContinuePrompt, follow-up exists, submitResult exists, OR batch completion in progress
-    // Also block if on 5th flashcard (count === 4) or 6th flashcard (count === 5) with follow-up question
-    const isOn5thOr6thWithFollowUp = (flashcardCount === 4 || flashcardCount === 5) && followUpQuestion
-    const shouldBlock = flashcardCount >= 6 || showContinuePrompt || followUpQuestion || submitResult || isCompletingBatchRef.current || isOn5thOr6thWithFollowUp
+    // Also block if on 5th flashcard (count === 4) or 6th flashcard (count === 5) - even without follow-up to prevent premature loading
+    // CRITICAL: Block when on 5th/6th flashcard to prevent count reset
+    const isOn5thOr6th = flashcardCount === 4 || flashcardCount === 5
+    const isOn5thOr6thWithFollowUp = isOn5thOr6th && followUpQuestion
+    const shouldBlock = flashcardCount >= 6 || showContinuePrompt || followUpQuestion || submitResult || isCompletingBatchRef.current || isOn5thOr6thWithFollowUp || isOn5thOr6th
     
     if (token && sessionSubtopics.length > 0 && hasStarted && !currentFlashcard && flashcardCount < 6 && !shouldBlock) {
       console.log('[AUTO LOAD EFFECT] Loading flashcard automatically, flashcardCount:', flashcardCount)
@@ -1274,12 +1286,20 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         hasFollowUp: !!followUpQuestion,
         hasResult: !!submitResult,
         isCompletingBatch: isCompletingBatchRef.current,
-        isOn5thOr6thWithFollowUp
+        isOn5thOr6thWithFollowUp,
+        isOn5thOr6th
       })
     }
   }, [sessionSubtopics.length, hasStarted, currentFlashcard, loadFlashcard, flashcardCount, showContinuePrompt, followUpQuestion, submitResult])
 
   const loadFollowUpQuestion = useCallback(async (topicId: string, diff: string, subTopic?: string, flashcardQuestionId?: string) => {
+    // CRITICAL: Don't load follow-up if we're on 5th/6th flashcard and batch completion is in progress
+    // This prevents race conditions that could reset the count
+    if (isCompletingBatchRef.current || flashcardCount >= 6) {
+      console.log('[loadFollowUpQuestion] BLOCKED - batch completion in progress or count >= 6')
+      return
+    }
+    
     try {
       const token = getAuthToken()
       if (!token) {
@@ -1304,11 +1324,23 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       // For other errors, log but don't show to user (to avoid disrupting flow)
       console.error('Error loading follow-up question:', err)
       // Don't set error state - gracefully continue without follow-up question
+      // CRITICAL: Don't trigger loadFlashcard or session reset on error when on 5th/6th flashcard
+      if (flashcardCount >= 4) {
+        console.log('[loadFollowUpQuestion] Error on 5th/6th flashcard - not resetting session')
+        return
+      }
     }
-  }, [])
+  }, [flashcardCount])
 
   const submitRating = useCallback(async (ratingValue: number) => {
     if (!currentFlashcard) return
+
+    // CRITICAL: Don't allow rating submission if batch completion is in progress
+    // This prevents race conditions when on 5th/6th flashcard
+    if (isCompletingBatchRef.current || flashcardCount >= 6) {
+      console.log('[submitRating] BLOCKED - batch completion in progress or count >= 6')
+      return
+    }
 
     try {
       const token = getAuthToken()
@@ -1320,16 +1352,33 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       setDifficulty(data.difficulty)
 
       // Load follow-up question with subtopic and flashcard linkage
-      await loadFollowUpQuestion(
-        currentFlashcard.topicId,
-        data.difficulty,
-        currentFlashcard.subTopic,
-        currentFlashcard.questionId
-      )
+      // Only load if we're not on 6th flashcard (count < 5 means we're on 1st-5th)
+      if (flashcardCount < 5) {
+        await loadFollowUpQuestion(
+          currentFlashcard.topicId,
+          data.difficulty,
+          currentFlashcard.subTopic,
+          currentFlashcard.questionId
+        )
+      } else if (flashcardCount === 5) {
+        // On 6th flashcard (count === 5), still load follow-up but be extra careful
+        await loadFollowUpQuestion(
+          currentFlashcard.topicId,
+          data.difficulty,
+          currentFlashcard.subTopic,
+          currentFlashcard.questionId
+        )
+      }
     } catch (err) {
+      // Don't reset session or load new flashcard on error when on 5th/6th flashcard
+      if (flashcardCount >= 4) {
+        console.log('[submitRating] Error on 5th/6th flashcard - not resetting session')
+        setError('Failed to submit rating. Please try again or continue with the current flashcard.')
+        return
+      }
       setError(err instanceof Error ? err.message : 'Failed to submit rating')
     }
-  }, [currentFlashcard, loadFollowUpQuestion])
+  }, [currentFlashcard, loadFollowUpQuestion, flashcardCount])
 
   // Timer countdown - enforce 30 seconds
   useEffect(() => {
@@ -1742,11 +1791,24 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
 
   const handleNextFlashcard = () => {
     // Don't load next flashcard if continue prompt is showing (batch completion triggered)
-    // Allow loading if flashcardCount === 6 (after 5th flashcard, need to load 6th)
-    // Block only if flashcardCount > 6 (after 6th flashcard, batch is complete)
-    if (showContinuePrompt || flashcardCount > 6) {
+    // Block if flashcardCount >= 6 (after 6th flashcard is completed, batch is complete)
+    // CRITICAL: Also block if batch completion is in progress
+    if (showContinuePrompt || flashcardCount >= 6 || isCompletingBatchRef.current) {
+      console.log('[handleNextFlashcard] BLOCKED - batch complete or in progress', {
+        showContinuePrompt,
+        flashcardCount,
+        isCompletingBatch: isCompletingBatchRef.current
+      })
       return
     }
+    
+    // CRITICAL: Extra safety check - don't proceed if we're on 5th/6th flashcard and follow-up is active
+    // This prevents premature loading when user hasn't submitted the follow-up answer yet
+    if ((flashcardCount === 4 || flashcardCount === 5) && followUpQuestion && !submitResult) {
+      console.log('[handleNextFlashcard] BLOCKED - on 5th/6th flashcard with active follow-up')
+      return
+    }
+    
     // Clear result state and reset all necessary states before loading next flashcard
     setSubmitResult(null)
     setFollowUpQuestion(null)
