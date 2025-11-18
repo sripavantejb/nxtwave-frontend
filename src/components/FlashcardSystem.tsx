@@ -1437,7 +1437,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   return (
     <div className={`flashcard-system ${className}`}>
       {/* Cooldown Timer - Display at top when batch is completed OR during active session */}
-      {(showContinuePrompt || cooldownTimerActive) && (
+      {((showContinuePrompt || cooldownTimerActive) && hasBatchCompletionTime) && (
         <div style={{
           marginBottom: '20px',
           padding: '16px',
@@ -1874,128 +1874,6 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
               Next Flashcard
             </button>
           )}
-        </div>
-      )}
-
-      {/* All Completed Questions with Explanations - Only show after all 6 cards are completed */}
-      {flashcardResults.length > 0 && showContinuePrompt && (
-        <div style={{
-          marginTop: '32px',
-          marginBottom: '32px',
-          padding: '24px',
-          background: 'white',
-          borderRadius: '16px',
-          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-          maxHeight: '500px',
-          overflowY: 'auto'
-        }}>
-          <h3 style={{
-            fontSize: '20px',
-            fontWeight: 600,
-            marginBottom: '20px',
-            color: '#0369a1',
-            textAlign: 'center',
-            borderBottom: '2px solid #e5e7eb',
-            paddingBottom: '12px'
-          }}>
-            Completed Questions ({flashcardResults.length})
-          </h3>
-          <div style={{ display: 'grid', gap: '16px' }}>
-            {flashcardResults.map((result, idx) => (
-              <div
-                key={idx}
-                style={{
-                  background: result.correct ? '#ecfdf5' : '#fef2f2',
-                  border: `2px solid ${result.correct ? '#059669' : '#dc2626'}`,
-                  padding: '16px',
-                  borderRadius: '12px'
-                }}
-              >
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '12px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{
-                      fontSize: '16px',
-                      fontWeight: 700,
-                      color: result.correct ? '#059669' : '#dc2626'
-                    }}>
-                      Question {idx + 1}
-                    </span>
-                    <span style={{
-                      background: result.correct ? '#059669' : '#dc2626',
-                      color: 'white',
-                      padding: '4px 10px',
-                      borderRadius: '8px',
-                      fontSize: '11px',
-                      fontWeight: 600
-                    }}>
-                      {result.difficulty}
-                    </span>
-                  </div>
-                  <div style={{
-                    fontSize: '20px',
-                    color: result.correct ? '#059669' : '#dc2626'
-                  }}>
-                    {result.correct ? <FaCheckCircle /> : <FaTimesCircle />}
-                  </div>
-                </div>
-
-                {/* Follow-up Question */}
-                <div style={{ marginBottom: '10px' }}>
-                  <h5 style={{
-                    marginBottom: '6px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    color: '#64748b'
-                  }}>
-                    Question:
-                  </h5>
-                  <div style={{ fontSize: '14px', lineHeight: 1.5, marginBottom: '8px' }}>
-                    {renderText(result.followUpQuestion)}
-                  </div>
-                </div>
-
-                {/* Answer Selection */}
-                <div style={{ marginBottom: '10px' }}>
-                  <p style={{ fontSize: '13px', marginBottom: '6px', fontWeight: 600, color: '#64748b' }}>
-                    Your Answer: <span style={{ color: result.correct ? '#059669' : '#dc2626' }}>
-                      {result.selectedOption || 'No answer selected'}
-                    </span>
-                  </p>
-                  <p style={{ fontSize: '13px', marginBottom: '6px', fontWeight: 600, color: '#64748b' }}>
-                    Correct Answer: <span style={{ color: '#059669' }}>
-                      {result.correctAnswer}
-                    </span>
-                  </p>
-                </div>
-
-                {/* Explanation */}
-                <div style={{
-                  marginTop: '12px',
-                  padding: '12px',
-                  background: 'white',
-                  borderRadius: '8px',
-                  border: '1px solid #e5e7eb'
-                }}>
-                  <h5 style={{
-                    marginBottom: '8px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    color: '#64748b'
-                  }}>
-                    Explanation:
-                  </h5>
-                  <div style={{ fontSize: '14px', lineHeight: 1.6 }}>
-                    {renderText(result.explanation || 'No explanation available.')}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       )}
 
