@@ -353,9 +353,13 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   }, [])
 
   // Initialize cooldown timer on mount if batchCompletionTime exists
+  // This only runs on mount or when calculateCooldownTimer changes, so it won't interfere with active batch completion
   useEffect(() => {
     const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
     const hasCompletionTime = batchCompletionTimeStr !== null
+    
+    // Set hasBatchCompletionTime based on localStorage state
+    // This is safe because it only runs on mount, not during active batch completion
     setHasBatchCompletionTime(hasCompletionTime)
     
     if (batchCompletionTimeStr) {
@@ -390,11 +394,19 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         // Fallback to localStorage if server call fails
         const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
         const hasCompletionTime = batchCompletionTimeStr !== null
-        setHasBatchCompletionTime(hasCompletionTime)
+        
+        // Only update hasBatchCompletionTime if batchCompletionTime exists in localStorage
+        // This prevents resetting it to false when it should be true
+        if (hasCompletionTime) {
+          setHasBatchCompletionTime(true)
+        }
         
         if (!batchCompletionTimeStr) {
           setCooldownTimerActive(false)
           setCooldownTimeRemaining('00:00')
+          // Only set hasBatchCompletionTime to false if localStorage is actually empty
+          // This prevents race conditions during batch completion
+          setHasBatchCompletionTime(false)
           return
         }
 
@@ -434,11 +446,19 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
 
       const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
       const hasCompletionTime = batchCompletionTimeStr !== null
-      setHasBatchCompletionTime(hasCompletionTime)
+      
+      // Only update hasBatchCompletionTime if batchCompletionTime exists in localStorage
+      // This prevents resetting it to false when it should be true
+      if (hasCompletionTime) {
+        setHasBatchCompletionTime(true)
+      }
       
       if (!batchCompletionTimeStr) {
         setCooldownTimerActive(false)
         setCooldownTimeRemaining('00:00')
+        // Only set hasBatchCompletionTime to false if localStorage is actually empty
+        // This prevents race conditions during batch completion
+        setHasBatchCompletionTime(false)
         return
       }
 
@@ -1033,8 +1053,13 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       if (newCount % 6 === 0) {
         // Start day shift timer after completing batch of 6 flashcards
         const completionTime = Date.now()
+        
+        // CRITICAL: Set localStorage FIRST, then state, to ensure proper synchronization
+        // This order prevents race conditions with intervals that check localStorage
         localStorage.setItem('hasAttemptedFlashcard', 'true')
         localStorage.setItem('batchCompletionTime', completionTime.toString())
+        
+        // Set hasBatchCompletionTime IMMEDIATELY after localStorage to ensure it's available for display condition
         setHasBatchCompletionTime(true)
         
         // Immediately calculate and set the timer BEFORE setting showContinuePrompt
@@ -1222,8 +1247,13 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       if (newCount % 6 === 0) {
         // Start day shift timer after completing batch of 6 flashcards
         const completionTime = Date.now()
+        
+        // CRITICAL: Set localStorage FIRST, then state, to ensure proper synchronization
+        // This order prevents race conditions with intervals that check localStorage
         localStorage.setItem('hasAttemptedFlashcard', 'true')
         localStorage.setItem('batchCompletionTime', completionTime.toString())
+        
+        // Set hasBatchCompletionTime IMMEDIATELY after localStorage to ensure it's available for display condition
         setHasBatchCompletionTime(true)
         
         // Immediately calculate and set the timer BEFORE setting showContinuePrompt
