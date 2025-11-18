@@ -24,6 +24,9 @@ function getAuthToken(): string | null {
   return localStorage.getItem('authToken') || localStorage.getItem('token') || null
 }
 
+const COOLDOWN_DURATION_MS = 5 * 60 * 1000
+const COOLDOWN_DURATION_SECONDS = COOLDOWN_DURATION_MS / 1000
+
 type FlashcardSystemProps = {
   className?: string
 }
@@ -76,6 +79,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   // Batch management state
   const [batchFlashcards, setBatchFlashcards] = useState<FlashcardData[]>([])
   const [currentBatchIndex, setCurrentBatchIndex] = useState(0)
+  const [showNewBatchAlert, setShowNewBatchAlert] = useState(false)
   
   // Refs to store current values for timer callback
   const currentFlashcardRef = useRef<FlashcardData | null>(null)
@@ -175,60 +179,79 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setCompletedSubtopics(progress.completedSubtopics || [])
           setHasStarted(progress.hasStarted || false)
           
-          // Restore current flashcard if it exists
-          if (progress.currentFlashcard) {
-            setCurrentFlashcard(progress.currentFlashcard)
-          }
-          
-          // Restore UI states
-          setShowAnswer(progress.showAnswer || false)
-          setRating(progress.rating || null)
-          setDifficulty(progress.difficulty || null)
-          setFollowUpQuestion(progress.followUpQuestion || null)
-          setSelectedOption(progress.selectedOption || null)
-          setSubmitResult(progress.submitResult || null)
-          setHasRated(progress.hasRated || false)
-          setShowHint(progress.showHint || false)
-          
-          // Restore timer states with time calculation
-          if (progress.timerStartTime && progress.timerActive && progress.timeLeft) {
-            const elapsed = Math.floor((Date.now() - progress.timerStartTime) / 1000)
-            const remaining = Math.max(0, progress.timeLeft - elapsed)
-            setTimeLeft(remaining)
-            setTimerActive(remaining > 0)
-            if (remaining > 0) {
-              setTimerStartTime(progress.timerStartTime)
-            } else {
-              // Timer expired during reload, auto-reveal answer
-              setShowAnswer(true)
-              setTimerActive(false)
-            }
-          } else {
-            setTimeLeft(progress.timeLeft || 30)
-            setTimerActive(progress.timerActive || false)
-            setTimerStartTime(progress.timerStartTime || null)
-          }
-          
-          // Restore follow-up timer states
-          if (progress.followUpTimerStartTime && progress.followUpTimerActive && progress.followUpTimer) {
-            const elapsed = Math.floor((Date.now() - progress.followUpTimerStartTime) / 1000)
-            const remaining = Math.max(0, progress.followUpTimer - elapsed)
-            setFollowUpTimer(remaining)
-            setFollowUpTimerActive(remaining > 0)
-            if (remaining > 0) {
-              setFollowUpTimerStartTime(progress.followUpTimerStartTime)
-            } else {
-              setFollowUpTimerActive(false)
-            }
-          } else {
-            setFollowUpTimer(progress.followUpTimer || 60)
-            setFollowUpTimerActive(progress.followUpTimerActive || false)
-            setFollowUpTimerStartTime(progress.followUpTimerStartTime || null)
-          }
-          
-          // If we've completed 6 flashcards, show continue prompt
+          // STRICT: If we've completed 6 flashcards, don't restore flashcard state
           if (progress.flashcardCount >= 6) {
+            // Clear all flashcard-related state when count >= 6
+            setCurrentFlashcard(null)
+            setShowAnswer(false)
+            setRating(null)
+            setDifficulty(null)
+            setFollowUpQuestion(null)
+            setSelectedOption(null)
+            setSubmitResult(null)
+            setHasRated(false)
+            setShowHint(false)
+            setTimerActive(false)
+            setTimeLeft(30)
+            setTimerStartTime(null)
+            setFollowUpTimerActive(false)
+            setFollowUpTimer(60)
+            setFollowUpTimerStartTime(null)
+            // Show continue prompt and alert
             setShowContinuePrompt(true)
+            setShowNewBatchAlert(true)
+          } else {
+            // Only restore flashcard state if count < 6
+            // Restore current flashcard if it exists
+            if (progress.currentFlashcard) {
+              setCurrentFlashcard(progress.currentFlashcard)
+            }
+            
+            // Restore UI states
+            setShowAnswer(progress.showAnswer || false)
+            setRating(progress.rating || null)
+            setDifficulty(progress.difficulty || null)
+            setFollowUpQuestion(progress.followUpQuestion || null)
+            setSelectedOption(progress.selectedOption || null)
+            setSubmitResult(progress.submitResult || null)
+            setHasRated(progress.hasRated || false)
+            setShowHint(progress.showHint || false)
+            
+            // Restore timer states with time calculation
+            if (progress.timerStartTime && progress.timerActive && progress.timeLeft) {
+              const elapsed = Math.floor((Date.now() - progress.timerStartTime) / 1000)
+              const remaining = Math.max(0, progress.timeLeft - elapsed)
+              setTimeLeft(remaining)
+              setTimerActive(remaining > 0)
+              if (remaining > 0) {
+                setTimerStartTime(progress.timerStartTime)
+              } else {
+                // Timer expired during reload, auto-reveal answer
+                setShowAnswer(true)
+                setTimerActive(false)
+              }
+            } else {
+              setTimeLeft(progress.timeLeft || 30)
+              setTimerActive(progress.timerActive || false)
+              setTimerStartTime(progress.timerStartTime || null)
+            }
+            
+            // Restore follow-up timer states
+            if (progress.followUpTimerStartTime && progress.followUpTimerActive && progress.followUpTimer) {
+              const elapsed = Math.floor((Date.now() - progress.followUpTimerStartTime) / 1000)
+              const remaining = Math.max(0, progress.followUpTimer - elapsed)
+              setFollowUpTimer(remaining)
+              setFollowUpTimerActive(remaining > 0)
+              if (remaining > 0) {
+                setFollowUpTimerStartTime(progress.followUpTimerStartTime)
+              } else {
+                setFollowUpTimerActive(false)
+              }
+            } else {
+              setFollowUpTimer(progress.followUpTimer || 60)
+              setFollowUpTimerActive(progress.followUpTimerActive || false)
+              setFollowUpTimerStartTime(progress.followUpTimerStartTime || null)
+            }
           }
           return true // Indicates progress was restored
         } else {
@@ -247,6 +270,36 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   useEffect(() => {
     // Don't save if we're still initializing or if it's a new session with no progress
     if (initializing || (isNewSession && flashcardCount === 0 && correctCount === 0 && incorrectCount === 0 && !hasStarted)) {
+      return
+    }
+    // STRICT: Don't save flashcard state if count >= 6 (batch is complete)
+    if (flashcardCount >= 6) {
+      // Clear flashcard-related state from localStorage when batch is complete
+      const progress = {
+        flashcardCount,
+        correctCount,
+        incorrectCount,
+        flashcardResults,
+        completedSubtopics,
+        hasStarted,
+        currentFlashcard: null, // Clear flashcard
+        showAnswer: false,
+        rating: null,
+        difficulty: null,
+        followUpQuestion: null,
+        selectedOption: null,
+        submitResult: null,
+        timerActive: false,
+        timeLeft: 30,
+        timerStartTime: null,
+        followUpTimerActive: false,
+        followUpTimer: 60,
+        followUpTimerStartTime: null,
+        hasRated: false,
+        showHint: false,
+        timestamp: Date.now()
+      }
+      localStorage.setItem(FLASHCARD_STORAGE_KEY, JSON.stringify(progress))
       return
     }
     saveFlashcardProgress()
@@ -301,6 +354,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setFlashcardCount(0)
           setCompletedSubtopics([]) // Reset completed subtopics for new session
           setShowContinuePrompt(false)
+          setShowNewBatchAlert(false)
           // Reset score counters and results for new session
           setCorrectCount(0)
           setIncorrectCount(0)
@@ -354,7 +408,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
 
   // Helper function to calculate and set cooldown timer
   const calculateCooldownTimer = useCallback((completionTime: number) => {
-    const targetTime = completionTime + (5 * 60 * 1000) // 5 minutes
+    const targetTime = completionTime + COOLDOWN_DURATION_MS // 5 minutes
         const now = Date.now()
         const remaining = targetTime - now
         
@@ -371,6 +425,34 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setCooldownTimerActive(false)
         }
   }, [])
+
+  const syncCooldownState = useCallback((remainingSeconds?: number) => {
+    const storedCompletionTime = localStorage.getItem('batchCompletionTime')
+    if (storedCompletionTime) {
+      const completionTime = parseInt(storedCompletionTime, 10)
+      if (!isNaN(completionTime)) {
+        setHasBatchCompletionTime(true)
+        calculateCooldownTimer(completionTime)
+        if (completionTime + COOLDOWN_DURATION_MS > Date.now()) {
+          setCooldownTimerActive(true)
+        }
+        return
+      }
+    }
+
+    if (typeof remainingSeconds === 'number' && !Number.isNaN(remainingSeconds)) {
+      const clampedRemaining = Math.min(COOLDOWN_DURATION_SECONDS, Math.max(0, remainingSeconds))
+      const elapsedSeconds = COOLDOWN_DURATION_SECONDS - clampedRemaining
+      const estimatedCompletionTime = Date.now() - elapsedSeconds * 1000
+      const normalizedCompletionTime = Math.max(0, Math.floor(estimatedCompletionTime))
+      localStorage.setItem('batchCompletionTime', normalizedCompletionTime.toString())
+      setHasBatchCompletionTime(true)
+      calculateCooldownTimer(normalizedCompletionTime)
+      if (normalizedCompletionTime + COOLDOWN_DURATION_MS > Date.now()) {
+        setCooldownTimerActive(true)
+      }
+    }
+  }, [calculateCooldownTimer])
 
   // Initialize cooldown timer on mount if batchCompletionTime exists
   // This only runs on mount or when calculateCooldownTimer changes, so it won't interfere with active batch completion
@@ -403,7 +485,11 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       try {
         const cooldownStatus = await getUserCooldown(token)
         setCooldownTimeRemaining(cooldownStatus.remainingTime)
-        setCooldownTimerActive(!cooldownStatus.canStart)
+        const cooldownActive = !cooldownStatus.canStart
+        setCooldownTimerActive(cooldownActive)
+        if (cooldownActive) {
+          syncCooldownState(cooldownStatus.remainingSeconds)
+        }
         // Automatically load new batch if cooldown has expired
         if (cooldownStatus.canStart && showContinuePrompt && handleStartNewBatchRef.current) {
           handleStartNewBatchRef.current().catch(err => {
@@ -411,6 +497,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           })
         }
       } catch (err) {
+        console.error('Error syncing cooldown from server:', err)
         // Fallback to localStorage if server call fails
         const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
         const hasCompletionTime = batchCompletionTimeStr !== null
@@ -513,7 +600,16 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         cooldownTimerIntervalRef.current = null
       }
     }
-  }, [showContinuePrompt, calculateCooldownTimer]) // Re-run when showContinuePrompt changes
+  }, [showContinuePrompt, calculateCooldownTimer, syncCooldownState]) // Re-run when showContinuePrompt changes
+
+  // Trigger sync when batch completes - this ensures timer appears immediately for first batch
+  useEffect(() => {
+    if ((flashcardCount >= 6 || showContinuePrompt) && !cooldownTimerActive) {
+      // If timer is not active but batch is complete, force sync
+      console.log('[SYNC EFFECT] Forcing cooldown sync because batch is complete but timer inactive')
+      syncCooldownState()
+    }
+  }, [flashcardCount, showContinuePrompt, syncCooldownState, cooldownTimerActive])
 
   // Handler for starting new batch
   const handleStartNewBatch = useCallback(async () => {
@@ -578,6 +674,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       setFlashcardResults([])
       setCompletedSubtopics([])
       setShowContinuePrompt(false)
+      setShowNewBatchAlert(false)
       setCooldownTimerActive(false)
       setCooldownTimeRemaining('00:00')
       setIsNewSession(true)
@@ -643,6 +740,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     // Stop loading if we've completed 6 flashcards
     if (flashcardCount >= 6) {
       setShowContinuePrompt(true)
+      setShowNewBatchAlert(true)
       setLoading(false)
       return
     }
@@ -671,9 +769,26 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     }
 
     try {
+      // STRICT ENFORCEMENT: Never load flashcard if we've already completed 6
+      if (flashcardCount >= 6) {
+        setShowContinuePrompt(true)
+        setShowNewBatchAlert(true)
+        setCurrentFlashcard(null) // Clear any current flashcard
+        setLoading(false)
+        return
+      }
+
       // Priority 0: Check if we have batch flashcards loaded
       // When a batch exists, ONLY serve from the batch (strict batch mode)
       if (batchFlashcards.length > 0) {
+        // STRICT: Check count before serving from batch
+        if (flashcardCount >= 6) {
+          setShowContinuePrompt(true)
+          setShowNewBatchAlert(true)
+          setCurrentFlashcard(null)
+          setLoading(false)
+          return
+        }
         if (currentBatchIndex < batchFlashcards.length) {
           // Serve next flashcard from batch
           const flashcard = batchFlashcards[currentBatchIndex]
@@ -686,15 +801,33 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           // Batch exhausted - should not happen if flashcardCount check works correctly
           // But if it does, show continue prompt
           setShowContinuePrompt(true)
+          setShowNewBatchAlert(true)
+          setCurrentFlashcard(null)
           setLoading(false)
           return
         }
       }
       
       // Priority 1: Check for due reviews (only if no batch is loaded)
+      // STRICT: Due reviews also respect the 6-card limit
+      if (flashcardCount >= 6) {
+        setShowContinuePrompt(true)
+        setShowNewBatchAlert(true)
+        setCurrentFlashcard(null)
+        setLoading(false)
+        return
+      }
       try {
         const dueQuestion = await getNextQuestion(token)
         if (dueQuestion && 'flashcard' in dueQuestion) {
+          // Double-check count before setting flashcard
+          if (flashcardCount >= 6) {
+            setShowContinuePrompt(true)
+            setShowNewBatchAlert(true)
+            setCurrentFlashcard(null)
+            setLoading(false)
+            return
+          }
           console.log('Loaded flashcard from due reviews:', dueQuestion)
           setCurrentFlashcard(dueQuestion as FlashcardData)
           setSubmitResult(null) // Clear previous result now that new flashcard is loaded
@@ -718,6 +851,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           return
         }
       } catch (cooldownErr) {
+        console.warn('Cooldown check failed, falling back to local storage:', cooldownErr)
         // If cooldown check fails, also check localStorage as fallback
         const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
         if (batchCompletionTimeStr) {
@@ -744,8 +878,26 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       }
 
       // Priority 2: Get flashcard from session subtopics
+      // STRICT: Check count before loading from session subtopics
+      if (flashcardCount >= 6) {
+        setShowContinuePrompt(true)
+        setShowNewBatchAlert(true)
+        setCurrentFlashcard(null)
+        setLoading(false)
+        return
+      }
+      
       const data = await fetchRandomFlashcardJson(token)
       console.log('Loaded flashcard data:', data)
+      
+      // STRICT: Double-check count after fetching data
+      if (flashcardCount >= 6) {
+        setShowContinuePrompt(true)
+        setShowNewBatchAlert(true)
+        setCurrentFlashcard(null)
+        setLoading(false)
+        return
+      }
       
       // Check if all subtopics are completed
       if ('allCompleted' in data && data.allCompleted) {
@@ -756,6 +908,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setCompletedSubtopics([]) // Reset completed subtopics
           setFlashcardCount(0) // Reset flashcard count
           setShowContinuePrompt(false)
+          setShowNewBatchAlert(false)
           // Reset score counters and results for new session
           setCorrectCount(0)
           setIncorrectCount(0)
@@ -781,12 +934,28 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
               const retryData = await fetchRandomFlashcardJson(token)
               
               if ('flashcard' in retryData) {
+                // STRICT: Check count before setting
+                if (flashcardCount >= 6) {
+                  setShowContinuePrompt(true)
+                  setShowNewBatchAlert(true)
+                  setCurrentFlashcard(null)
+                  setLoading(false)
+                  return
+                }
                 setCurrentFlashcard(retryData as FlashcardData)
                 setSubmitResult(null) // Clear previous result now that new flashcard is loaded
               } else {
                 // Last resort: try one more time
                 const finalData = await fetchRandomFlashcardJson(token)
                 if ('flashcard' in finalData) {
+                  // STRICT: Check count before setting
+                  if (flashcardCount >= 6) {
+                    setShowContinuePrompt(true)
+                    setShowNewBatchAlert(true)
+                    setCurrentFlashcard(null)
+                    setLoading(false)
+                    return
+                  }
                   setCurrentFlashcard(finalData as FlashcardData)
                   setSubmitResult(null) // Clear previous result now that new flashcard is loaded
                 } else {
@@ -799,6 +968,14 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
               // Don't show error - backend should handle this
             }
           } else if ('flashcard' in newData) {
+            // STRICT: Check count before setting
+            if (flashcardCount >= 6) {
+              setShowContinuePrompt(true)
+              setShowNewBatchAlert(true)
+              setCurrentFlashcard(null)
+              setLoading(false)
+              return
+            }
             setCurrentFlashcard(newData as FlashcardData)
             setSubmitResult(null) // Clear previous result now that new flashcard is loaded
           } else {
@@ -821,9 +998,25 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         } catch (sessionErr) {
           console.error('Error starting new session:', sessionErr)
           // Try to load flashcard anyway - don't show error
+          // STRICT: Check count before loading fallback
+          if (flashcardCount >= 6) {
+            setShowContinuePrompt(true)
+            setShowNewBatchAlert(true)
+            setCurrentFlashcard(null)
+            setLoading(false)
+            return
+          }
           try {
             const fallbackData = await fetchRandomFlashcardJson(token)
             if ('flashcard' in fallbackData) {
+              // STRICT: Check count before setting
+              if (flashcardCount >= 6) {
+                setShowContinuePrompt(true)
+                setShowNewBatchAlert(true)
+                setCurrentFlashcard(null)
+                setLoading(false)
+                return
+              }
               setCurrentFlashcard(fallbackData as FlashcardData)
               setSubmitResult(null) // Clear previous result now that new flashcard is loaded
             }
@@ -832,6 +1025,14 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           }
         }
       } else if ('flashcard' in data) {
+        // STRICT: Final check before setting flashcard
+        if (flashcardCount >= 6) {
+          setShowContinuePrompt(true)
+          setShowNewBatchAlert(true)
+          setCurrentFlashcard(null)
+          setLoading(false)
+          return
+        }
         setCurrentFlashcard(data as FlashcardData)
         setSubmitResult(null) // Clear previous result now that new flashcard is loaded
       } else {
@@ -844,6 +1045,14 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           }
           const retryData = await fetchRandomFlashcardJson(token)
           if ('flashcard' in retryData) {
+            // STRICT: Check count before setting
+            if (flashcardCount >= 6) {
+              setShowContinuePrompt(true)
+              setShowNewBatchAlert(true)
+              setCurrentFlashcard(null)
+              setLoading(false)
+              return
+            }
             setCurrentFlashcard(retryData as FlashcardData)
             setSubmitResult(null) // Clear previous result now that new flashcard is loaded
           } else {
@@ -885,8 +1094,24 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
             setIsNewSession(true)
             setHasStarted(false)
             // Retry loading flashcard
+            // STRICT: Check count before retry
+            if (flashcardCount >= 6) {
+              setShowContinuePrompt(true)
+              setShowNewBatchAlert(true)
+              setCurrentFlashcard(null)
+              setLoading(false)
+              return
+            }
             const retryData = await fetchRandomFlashcardJson(token)
             if (retryData && 'flashcard' in retryData) {
+              // STRICT: Check count before setting
+              if (flashcardCount >= 6) {
+                setShowContinuePrompt(true)
+                setShowNewBatchAlert(true)
+                setCurrentFlashcard(null)
+                setLoading(false)
+                return
+              }
               setCurrentFlashcard(retryData as FlashcardData)
               setSubmitResult(null) // Clear previous result now that new flashcard is loaded
               setLoading(false)
@@ -899,6 +1124,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
               // Reset flashcard count for new session
               setFlashcardCount(0)
               setShowContinuePrompt(false)
+              setShowNewBatchAlert(false)
               // Reset score counters and results for new session
               setCorrectCount(0)
               setIncorrectCount(0)
@@ -907,6 +1133,14 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
               setHasStarted(false)
               const newData = await fetchRandomFlashcardJson(token)
               if (newData && 'flashcard' in newData) {
+                // STRICT: Check count before setting
+                if (flashcardCount >= 6) {
+                  setShowContinuePrompt(true)
+                  setShowNewBatchAlert(true)
+                  setCurrentFlashcard(null)
+                  setLoading(false)
+                  return
+                }
                 setCurrentFlashcard(newData as FlashcardData)
                 setSubmitResult(null) // Clear previous result now that new flashcard is loaded
                 setLoading(false)
@@ -946,6 +1180,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setCompletedSubtopics([]) // Reset completed subtopics
           setFlashcardCount(0) // Reset flashcard count
           setShowContinuePrompt(false)
+          setShowNewBatchAlert(false)
           // Reset score counters and results for new session
           setCorrectCount(0)
           setIncorrectCount(0)
@@ -975,12 +1210,13 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   }, [loadFlashcard, navigate])
 
   // Initial load - only if hasStarted is true and no currentFlashcard exists
+  // STRICT: Don't load if we've completed 6 flashcards
   useEffect(() => {
     const token = getAuthToken()
-    if (token && sessionSubtopics.length > 0 && hasStarted && !currentFlashcard) {
+    if (token && sessionSubtopics.length > 0 && hasStarted && !currentFlashcard && flashcardCount < 6) {
       loadFlashcard()
     }
-  }, [sessionSubtopics.length, hasStarted, currentFlashcard, loadFlashcard])
+  }, [sessionSubtopics.length, hasStarted, currentFlashcard, loadFlashcard, flashcardCount])
 
   const loadFollowUpQuestion = useCallback(async (topicId: string, diff: string, subTopic?: string, flashcardQuestionId?: string) => {
     try {
@@ -1131,25 +1367,27 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         // Set hasBatchCompletionTime IMMEDIATELY after localStorage to ensure it's available for display condition
         setHasBatchCompletionTime(true)
         
-        // Immediately calculate and set the timer BEFORE setting showContinuePrompt
-        // This ensures the timer is active when the prompt shows
+        // Force immediate timer activation to ensure it displays at 05:00
+        // Calculate exactly 300 seconds (5 minutes) and set timer state
+        const totalSeconds = 300 // Exactly 5 minutes
+        const minutes = Math.floor(totalSeconds / 60)
+        const seconds = totalSeconds % 60
+        const timeString = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+        
+        // Set ALL timer state synchronously before any other state updates
+        setCooldownTimeRemaining(timeString)
+        setCooldownTimerActive(true)
+        console.log('[BATCH COMPLETE - handleAutoSubmitAnswer] Cooldown timer set to:', timeString, 'flashcardCount:', newCount)
+        
+        // Now calculate with helper (redundant but ensures sync)
         calculateCooldownTimer(completionTime)
-        
-        // Force immediate timer activation to ensure it displays
-        const targetTime = completionTime + (5 * 60 * 1000) // 5 minutes
-        const now = Date.now()
-        const remaining = targetTime - now
-        
-        if (remaining > 0) {
-          const totalSeconds = Math.floor(remaining / 1000)
-          const minutes = Math.floor(totalSeconds / 60)
-          const seconds = totalSeconds % 60
-          setCooldownTimeRemaining(`${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`)
-          setCooldownTimerActive(true)
-        }
         
         // Now set showContinuePrompt to true - timer should already be active
         setShowContinuePrompt(true)
+        setShowNewBatchAlert(true)
+        
+        // STRICT: Clear current flashcard when batch is complete
+        setCurrentFlashcard(null)
         
         // Store batch completion time on backend
         const token = getAuthToken()
@@ -1168,29 +1406,43 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         
         // Dispatch custom event to notify Navbar immediately
         window.dispatchEvent(new Event('flashcardAttempted'))
-        // Clear follow-up question state - result will be shown, user can view summary
-        setFollowUpQuestion(null)
-        setSelectedOption(null)
-        setError(null)
-      } else {
-        // Clear follow-up question state - result will be shown, user clicks "Next Flashcard" to proceed
-        setFollowUpQuestion(null)
-        setSelectedOption(null)
-        setError(null)
-        // Don't automatically load next flashcard - wait for user to click "Next Flashcard" button
+        
+        // DON'T clear follow-up question or selected option - let result display
+        // DON'T clear error either - user needs to see any error messages
+        // The result will show with the cooldown timer visible above it
       }
+      
+      // Only clear follow-up question state if NOT at batch completion
+      // If batch is complete, leave states as-is so result displays
+      if (newCount < 6) {
+        setFollowUpQuestion(null)
+        setSelectedOption(null)
+        setError(null)
+      }
+      // Don't automatically load next flashcard - wait for user to click "Next Flashcard" button
     } catch (err) {
       console.error('Error in auto submit:', err)
-      // If there's an error loading next flashcard, just clear states and try again
-      setError(null)
-      setFollowUpQuestion(null)
-      setSelectedOption(null)
-      setSubmitResult(null)
-      loadFlashcard()
+      // STRICT: Don't load next flashcard if we've completed 6
+      if (flashcardCountRef.current >= 6) {
+        setShowContinuePrompt(true)
+        setShowNewBatchAlert(true)
+        setCurrentFlashcard(null)
+        setError(null)
+        setFollowUpQuestion(null)
+        setSelectedOption(null)
+        setSubmitResult(null)
+      } else {
+        // If there's an error loading next flashcard, just clear states and try again
+        setError(null)
+        setFollowUpQuestion(null)
+        setSelectedOption(null)
+        setSubmitResult(null)
+        loadFlashcard()
+      }
     } finally {
       setLoading(false)
     }
-  }, [loadFlashcard])
+  }, [calculateCooldownTimer, loadFlashcard])
 
   // Timer countdown for follow-up question - 60 seconds
   useEffect(() => {
@@ -1215,11 +1467,23 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
                 setFlashcardCount(newCount)
                 if (newCount >= 6) {
                   setShowContinuePrompt(true)
+                  setShowNewBatchAlert(true)
                   const completionTime = Date.now()
                   localStorage.setItem('hasAttemptedFlashcard', 'true')
                   localStorage.setItem('batchCompletionTime', completionTime.toString())
                   setHasBatchCompletionTime(true)
+                  
+                  // Force immediate timer activation - set to exactly 05:00
+                  const totalSeconds = 300 // Exactly 5 minutes
+                  const minutes = Math.floor(totalSeconds / 60)
+                  const seconds = totalSeconds % 60
+                  const timeString = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+                  setCooldownTimeRemaining(timeString)
+                  setCooldownTimerActive(true)
+                  console.log('[BATCH COMPLETE - fallback] Cooldown timer set to:', timeString)
+                  
                   calculateCooldownTimer(completionTime)
+                  
                   const token = getAuthToken()
                   if (token) {
                     completeBatch(token, completionTime).catch(err => {
@@ -1244,7 +1508,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [followUpQuestion, followUpTimerActive, submitResult, followUpTimer, handleAutoSubmitAnswer, currentFlashcard, flashcardCount, loadFlashcard])
+  }, [followUpQuestion, followUpTimerActive, submitResult, followUpTimer, handleAutoSubmitAnswer, currentFlashcard, flashcardCount, loadFlashcard, calculateCooldownTimer])
 
   const handleRating = async (ratingValue: number) => {
     if (hasRated || !timerActive) return // Prevent rating after timeout
@@ -1311,9 +1575,12 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       // Increment flashcard count
       const newCount = flashcardCount + 1
       setFlashcardCount(newCount)
+      
+      console.log('[handleSubmitAnswer] newCount:', newCount, 'flashcardCount:', flashcardCount)
 
       // If we've completed 6 flashcards, show continue prompt and start day shift timer
       if (newCount % 6 === 0) {
+        console.log('[BATCH COMPLETE DETECTED] Starting batch completion flow...')
         // Start day shift timer after completing batch of 6 flashcards
         const completionTime = Date.now()
         
@@ -1325,25 +1592,33 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         // Set hasBatchCompletionTime IMMEDIATELY after localStorage to ensure it's available for display condition
         setHasBatchCompletionTime(true)
         
-        // Immediately calculate and set the timer BEFORE setting showContinuePrompt
-        // This ensures the timer is active when the prompt shows
+        // Force immediate timer activation to ensure it displays at 05:00
+        // Calculate exactly 300 seconds (5 minutes) and set timer state
+        const totalSeconds = 300 // Exactly 5 minutes
+        const minutes = Math.floor(totalSeconds / 60)
+        const seconds = totalSeconds % 60
+        const timeString = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+        
+        // Set ALL timer state synchronously before any other state updates
+        setCooldownTimeRemaining(timeString)
+        setCooldownTimerActive(true)
+        console.log('[BATCH COMPLETE - handleSubmitAnswer] Timer state set:', {
+          timeString,
+          newCount,
+          hasBatchCompletionTime: true,
+          cooldownTimerActive: true
+        })
+        
+        // Now calculate with helper (redundant but ensures sync)
         calculateCooldownTimer(completionTime)
-        
-        // Force immediate timer activation to ensure it displays
-        const targetTime = completionTime + (5 * 60 * 1000) // 5 minutes
-        const now = Date.now()
-        const remaining = targetTime - now
-        
-        if (remaining > 0) {
-          const totalSeconds = Math.floor(remaining / 1000)
-          const minutes = Math.floor(totalSeconds / 60)
-          const seconds = totalSeconds % 60
-          setCooldownTimeRemaining(`${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`)
-          setCooldownTimerActive(true)
-        }
         
         // Now set showContinuePrompt to true - timer should already be active
         setShowContinuePrompt(true)
+        setShowNewBatchAlert(true)
+        console.log('[BATCH COMPLETE - handleSubmitAnswer] Prompts set, batch completion complete')
+        
+        // STRICT: Clear current flashcard when batch is complete
+        setCurrentFlashcard(null)
         
         // Store batch completion time on backend (MUST succeed)
         const token = getAuthToken()
@@ -1367,18 +1642,20 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         
         // Dispatch custom event to notify Navbar immediately
         window.dispatchEvent(new Event('flashcardAttempted'))
-        // Clear follow-up question state - result will be shown, user can view summary
+        
+        // DON'T clear follow-up question or selected option - let result display
+        // DON'T clear error either - user needs to see any error messages
+        // DON'T return early - let the result display below
+        // The result will show with the cooldown timer visible above it
+      }
+      
+      // Only clear follow-up question state if NOT at batch completion (count < 6)
+      // If batch is complete, leave states as-is so result displays
+      if (flashcardCount + 1 < 6) {
         setFollowUpQuestion(null)
         setSelectedOption(null)
         setError(null)
-        // Don't load next flashcard - session is complete
-        return
       }
-      
-      // Clear follow-up question state - result will be shown, user clicks "Next Flashcard" to proceed
-      setFollowUpQuestion(null)
-      setSelectedOption(null)
-      setError(null)
       // Don't automatically load next flashcard - wait for user to click "Next Flashcard" button
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit answer')
@@ -1388,8 +1665,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   }
 
   const handleNextFlashcard = () => {
-    // Don't load next flashcard if continue prompt is showing
-    if (showContinuePrompt) {
+    // STRICT: Don't load next flashcard if continue prompt is showing OR if we've completed 6 cards
+    if (showContinuePrompt || flashcardCount >= 6) {
       return
     }
     // Clear result state and reset all necessary states before loading next flashcard
@@ -1538,11 +1815,131 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   const hasBatchCompletionTimeFromStorage = batchCompletionTimeFromStorage !== null
   // Use state if available, otherwise fall back to localStorage check
   const shouldShowCooldownTimer = hasBatchCompletionTime || hasBatchCompletionTimeFromStorage
+  
+  // Debug log for timer display - show whenever batch might be complete
+  if (flashcardCount >= 6 || showContinuePrompt || cooldownTimerActive) {
+    console.log('[TIMER DISPLAY CHECK]', {
+      flashcardCount,
+      showContinuePrompt,
+      cooldownTimerActive,
+      shouldShowCooldownTimer,
+      hasBatchCompletionTime,
+      hasBatchCompletionTimeFromStorage,
+      cooldownTimeRemaining,
+      willShowTimer: ((flashcardCount >= 6 || showContinuePrompt || cooldownTimerActive) && shouldShowCooldownTimer)
+    })
+  }
 
   return (
     <div className={`flashcard-system ${className}`}>
+      {/* New Batch Ready Alert */}
+      {showNewBatchAlert && showContinuePrompt && (
+        <div style={{
+          marginBottom: '20px',
+          padding: '24px',
+          background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+          borderRadius: '16px',
+          border: '2px solid #059669',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px'
+        }}>
+          <div style={{
+            fontSize: '32px',
+            color: '#059669',
+            flexShrink: 0
+          }}>
+            <FaCheckCircle />
+          </div>
+          <div style={{ flex: 1 }}>
+            <h3 style={{
+              fontSize: '20px',
+              fontWeight: 700,
+              color: '#059669',
+              marginBottom: '8px',
+              margin: 0
+            }}>
+              New Batch Ready! 🎉
+            </h3>
+            <p style={{
+              fontSize: '14px',
+              color: '#047857',
+              margin: 0,
+              lineHeight: 1.5
+            }}>
+              New batch available! Start a new session to review incorrectly answered flashcards.
+            </p>
+          </div>
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            flexShrink: 0,
+            alignItems: 'center'
+          }}>
+            <button
+              onClick={handleStartNewBatch}
+              disabled={cooldownTimeRemaining !== '00:00' || loading}
+              style={{
+                background: cooldownTimeRemaining === '00:00' && !loading ? '#059669' : '#9ca3af',
+                color: 'white',
+                border: 'none',
+                padding: '10px 20px',
+                borderRadius: '8px',
+                cursor: cooldownTimeRemaining === '00:00' && !loading ? 'pointer' : 'not-allowed',
+                fontSize: '14px',
+                fontWeight: 600,
+                transition: 'all 0.2s',
+                opacity: cooldownTimeRemaining === '00:00' && !loading ? 1 : 0.6
+              }}
+              onMouseEnter={(e) => {
+                if (cooldownTimeRemaining === '00:00' && !loading) {
+                  e.currentTarget.style.background = '#047857'
+                  e.currentTarget.style.transform = 'scale(1.02)'
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (cooldownTimeRemaining === '00:00' && !loading) {
+                  e.currentTarget.style.background = '#059669'
+                  e.currentTarget.style.transform = 'scale(1)'
+                }
+              }}
+            >
+              {loading ? 'Loading...' : cooldownTimeRemaining === '00:00' ? 'Start New Batch' : 'Wait for Timer'}
+            </button>
+            <button
+              onClick={() => setShowNewBatchAlert(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '20px',
+                color: '#047857',
+                padding: '4px 8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '4px',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#d1fae5'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'none'
+              }}
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Cooldown Timer - Display at top when batch is completed OR during active session */}
-      {((showContinuePrompt || cooldownTimerActive) && shouldShowCooldownTimer) && (
+      {/* Show timer if: batch complete (6 cards) OR continue prompt showing OR timer active */}
+      {((flashcardCount >= 6 || showContinuePrompt || cooldownTimerActive) && shouldShowCooldownTimer) && (
         <div style={{
           marginBottom: '20px',
           padding: '16px',
@@ -1635,7 +2032,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         </div>
       )}
 
-      {currentFlashcard && !followUpQuestion && (
+      {/* STRICT: Only show flashcard if count is less than 6 */}
+      {currentFlashcard && !followUpQuestion && flashcardCount < 6 && (
         <div className="flashcard-card">
           {/* Cooldown Timer on Flashcard Card - Show when batch completion time exists */}
           {cooldownTimerActive && shouldShowCooldownTimer && !showContinuePrompt && (
@@ -1834,8 +2232,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         </div>
       )}
 
-      {/* Follow-up Question */}
-      {followUpQuestion && !submitResult && (
+      {/* Follow-up Question - STRICT: Only show if count is less than 6 */}
+      {followUpQuestion && !submitResult && flashcardCount < 6 && (
         <div className="followup-question">
           <div style={{ marginBottom: '20px', textAlign: 'center' }}>
             <span style={{ 
@@ -1919,8 +2317,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         </div>
       )}
 
-      {/* Submit Result - Always show immediately after submission, even for correct answers */}
-      {submitResult && (
+      {/* Submit Result - STRICT: Only show if count is less than 6, or if showing summary */}
+      {submitResult && (flashcardCount < 6 || showContinuePrompt) && (
         <div className="submit-result">
           <div style={{ 
             textAlign: 'center', 
