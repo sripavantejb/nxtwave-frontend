@@ -459,17 +459,42 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   // This only runs on mount or when calculateCooldownTimer changes, so it won't interfere with active batch completion
   useEffect(() => {
     const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
+    const batchCompleted = localStorage.getItem('batchCompleted') === 'true'
     const hasCompletionTime = batchCompletionTimeStr !== null
-    
-    // Set hasBatchCompletionTime based on localStorage state
-    // This is safe because it only runs on mount, not during active batch completion
-    setHasBatchCompletionTime(hasCompletionTime)
-    
-    if (batchCompletionTimeStr) {
-      const completionTime = parseInt(batchCompletionTimeStr, 10)
-      if (!isNaN(completionTime)) {
-        calculateCooldownTimer(completionTime)
+
+    // CRITICAL: Recover state from localStorage on mount
+    // This ensures state is consistent even if page was refreshed or component remounted
+    if (hasCompletionTime || batchCompleted) {
+      setHasBatchCompletionTime(true)
+      
+      // If batchCompleted flag exists, ensure we're in batch completion state
+      if (batchCompleted) {
+        isCompletingBatchRef.current = true
+        setShowContinuePrompt(true)
+        setShowNewBatchAlert(true)
       }
+
+      if (batchCompletionTimeStr) {
+        const completionTime = parseInt(batchCompletionTimeStr, 10)
+        if (!isNaN(completionTime)) {
+          // Check if cooldown is still active
+          const targetTime = completionTime + COOLDOWN_DURATION_MS
+          const now = Date.now()
+          if (now < targetTime) {
+            // Cooldown still active
+            calculateCooldownTimer(completionTime)
+            setCooldownTimerActive(true)
+          } else {
+            // Cooldown expired, but batch was completed
+            setCooldownTimerActive(false)
+            setCooldownTimeRemaining('00:00')
+          }
+        }
+      }
+    } else {
+      // No batch completion time, ensure state is clean
+      setHasBatchCompletionTime(false)
+      isCompletingBatchRef.current = false
     }
   }, [calculateCooldownTimer]) // Run once on mount
 
@@ -694,7 +719,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       // Clear batch completion time
       localStorage.removeItem('batchCompletionTime')
       localStorage.removeItem('hasAttemptedFlashcard')
+      localStorage.removeItem('batchCompleted')
       setHasBatchCompletionTime(false)
+      isCompletingBatchRef.current = false
       
       // Clear persisted progress
       localStorage.removeItem(FLASHCARD_STORAGE_KEY)
@@ -1415,7 +1442,6 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     const currentFollowUp = followUpQuestionRef.current
     const currentDifficulty = difficultyRef.current || 'medium'
     const currentCompletedSubtopics = completedSubtopicsRef.current
-    const currentFlashcardCount = flashcardCountRef.current
     
     if (!currentFollowUp || !currentFlashcardData) {
       setLoading(false)
@@ -1452,10 +1478,6 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         setCompletedSubtopics([...currentCompletedSubtopics, currentFlashcardData.subTopic])
       }
 
-      // Increment flashcard count
-      const newCount = currentFlashcardCount + 1
-      setFlashcardCount(newCount)
-
       // Create a result object for display purposes (timeout case - always incorrect)
       const timeoutResult = {
         correct: false,
@@ -1464,77 +1486,74 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       }
       setSubmitResult(timeoutResult)
 
-      // If we've completed 6 flashcards, show continue prompt and start day shift timer
-      // Use newCount === 6 instead of newCount % 6 === 0 to ensure it only triggers at exactly 6
-      if (newCount === 6) {
-        // Set flag to prevent auto-load during batch completion
-        isCompletingBatchRef.current = true
-        // Start day shift timer after completing batch of 6 flashcards
-        const completionTime = Date.now()
+      // Increment flashcard count - use functional update to ensure atomic operation
+      let batchWasCompleted = false
+      setFlashcardCount((prevCount) => {
+        const newCount = prevCount + 1
+        console.log('[handleAutoSubmitAnswer] Count increment:', { prevCount, newCount })
         
-        // CRITICAL: Set localStorage FIRST, then state, to ensure proper synchronization
-        // This order prevents race conditions with intervals that check localStorage
-        localStorage.setItem('hasAttemptedFlashcard', 'true')
-        localStorage.setItem('batchCompletionTime', completionTime.toString())
-        
-        // Set hasBatchCompletionTime IMMEDIATELY after localStorage to ensure it's available for display condition
-        setHasBatchCompletionTime(true)
-        
-        // Force immediate timer activation to ensure it displays at 05:00
-        // Calculate exactly 300 seconds (5 minutes) and set timer state
-        const totalSeconds = 300 // Exactly 5 minutes
-        const minutes = Math.floor(totalSeconds / 60)
-        const seconds = totalSeconds % 60
-        const timeString = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-        
-        // Set ALL timer state synchronously before any other state updates
-        setCooldownTimeRemaining(timeString)
-        setCooldownTimerActive(true)
-        console.log('[BATCH COMPLETE - handleAutoSubmitAnswer] Cooldown timer set to:', timeString, 'flashcardCount:', newCount)
-        
-        // Now calculate with helper (redundant but ensures sync)
-        calculateCooldownTimer(completionTime)
-        
-        // Now set showContinuePrompt to true - timer should already be active
-        setShowContinuePrompt(true)
-        setShowNewBatchAlert(true)
-        
-        // DON'T clear current flashcard - this would trigger auto-load effect
-        // Keep the flashcard visible so user can see what they were answering
-        // setCurrentFlashcard(null)  // COMMENTED OUT to prevent auto-reload
-        
-        // Store batch completion time on backend
-        const token = getAuthToken()
-        if (token) {
-          try {
-            await completeBatch(token, completionTime)
-          } catch (err) {
-            // Silently fail - backend might not be available, but frontend timer will still work
-            console.error('Error storing batch completion time:', err)
-          }
+        // CRITICAL: Check for batch completion INSIDE the state update function
+        // This ensures atomic operation - no race conditions
+        if (newCount === 6) {
+          batchWasCompleted = true
+          console.log('[BATCH COMPLETE DETECTED - auto submit] Starting batch completion flow...')
+          
+          // Set flag IMMEDIATELY
+          isCompletingBatchRef.current = true
+          
+          // Start day shift timer after completing batch of 6 flashcards
+          const completionTime = Date.now()
+          
+          // CRITICAL: Set localStorage FIRST, synchronously
+          localStorage.setItem('hasAttemptedFlashcard', 'true')
+          localStorage.setItem('batchCompletionTime', completionTime.toString())
+          localStorage.setItem('batchCompleted', 'true')
+          
+          // Use requestAnimationFrame for synchronous state updates
+          requestAnimationFrame(() => {
+            setHasBatchCompletionTime(true)
+            
+            // Force immediate timer activation
+            const totalSeconds = 300
+            const minutes = Math.floor(totalSeconds / 60)
+            const seconds = totalSeconds % 60
+            const timeString = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+            
+            setCooldownTimeRemaining(timeString)
+            setCooldownTimerActive(true)
+            setShowContinuePrompt(true)
+            setShowNewBatchAlert(true)
+            
+            console.log('[BATCH COMPLETE - handleAutoSubmitAnswer] All state set:', {
+              timeString,
+              newCount
+            })
+            
+            calculateCooldownTimer(completionTime)
+            setBatchFlashcards([])
+            setCurrentBatchIndex(0)
+            window.dispatchEvent(new Event('flashcardAttempted'))
+            
+            // Store on backend (async, don't block)
+            const token = getAuthToken()
+            if (token) {
+              completeBatch(token, completionTime).catch(err => {
+                console.error('Error storing batch completion time:', err)
+                // Don't reset state on error
+              })
+            }
+          })
         }
         
-        // Clear batch flashcards state
-        setBatchFlashcards([])
-        setCurrentBatchIndex(0)
-        
-        // Dispatch custom event to notify Navbar immediately
-        window.dispatchEvent(new Event('flashcardAttempted'))
-        
-        // DON'T clear follow-up question or selected option - let result display
-        // DON'T clear error either - user needs to see any error messages
-        // The result will show with the cooldown timer visible above it
-      }
+        return newCount
+      })
       
       // Only clear follow-up question state if NOT at batch completion
-      // If batch is complete, leave states as-is so result displays
-      if (newCount < 6) {
+      // Check localStorage flag to determine if batch was completed
+      if (!batchWasCompleted && localStorage.getItem('batchCompleted') !== 'true') {
         setFollowUpQuestion(null)
         setSelectedOption(null)
         setError(null)
-      } else {
-        // Batch is complete, ensure flag is set
-        isCompletingBatchRef.current = true
       }
       // Don't automatically load next flashcard - wait for user to click "Next Flashcard" button
     } catch (err) {
@@ -1689,94 +1708,98 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         setCompletedSubtopics([...completedSubtopics, currentFlashcard.subTopic])
       }
 
-      // Increment flashcard count
-      const newCount = flashcardCount + 1
-      setFlashcardCount(newCount)
-      
-      console.log('[handleSubmitAnswer] newCount:', newCount, 'flashcardCount:', flashcardCount)
-
-      // If we've completed 6 flashcards, show continue prompt and start day shift timer
-      // Check if newCount equals 6 (not just divisible by 6) to ensure we've completed exactly 6 flashcards
-      if (newCount === 6) {
-        console.log('[BATCH COMPLETE DETECTED] Starting batch completion flow...')
-        // Set flag to prevent auto-load during batch completion
-        isCompletingBatchRef.current = true
+      // Increment flashcard count - use functional update to ensure atomic operation
+      setFlashcardCount((prevCount) => {
+        const newCount = prevCount + 1
+        console.log('[handleSubmitAnswer] Count increment:', { prevCount, newCount })
         
-        // Start day shift timer after completing batch of 6 flashcards
-        const completionTime = Date.now()
-        
-        // CRITICAL: Set localStorage FIRST, then state, to ensure proper synchronization
-        // This order prevents race conditions with intervals that check localStorage
-        localStorage.setItem('hasAttemptedFlashcard', 'true')
-        localStorage.setItem('batchCompletionTime', completionTime.toString())
-        
-        // Set hasBatchCompletionTime IMMEDIATELY after localStorage to ensure it's available for display condition
-        setHasBatchCompletionTime(true)
-        
-        // Force immediate timer activation to ensure it displays at 05:00
-        // Calculate exactly 300 seconds (5 minutes) and set timer state
-        const totalSeconds = 300 // Exactly 5 minutes
-        const minutes = Math.floor(totalSeconds / 60)
-        const seconds = totalSeconds % 60
-        const timeString = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-        
-        // Set ALL timer state synchronously before any other state updates
-        setCooldownTimeRemaining(timeString)
-        setCooldownTimerActive(true)
-        console.log('[BATCH COMPLETE - handleSubmitAnswer] Timer state set:', {
-          timeString,
-          newCount,
-          hasBatchCompletionTime: true,
-          cooldownTimerActive: true
-        })
-        
-        // Now calculate with helper (redundant but ensures sync)
-        calculateCooldownTimer(completionTime)
-        
-        // Now set showContinuePrompt to true - timer should already be active
-        setShowContinuePrompt(true)
-        setShowNewBatchAlert(true)
-        console.log('[BATCH COMPLETE - handleSubmitAnswer] Prompts set, batch completion complete')
-        
-        // DON'T clear current flashcard - this would trigger auto-load effect
-        // Keep the flashcard visible so user can see what they were answering
-        // setCurrentFlashcard(null)  // COMMENTED OUT to prevent auto-reload
-        
-        // Store batch completion time on backend (MUST succeed)
-        const token = getAuthToken()
-        if (token) {
-          try {
-            await completeBatch(token, completionTime)
-          } catch (err) {
-            const error = err as Error & { status?: number }
-            if (error.status === 429) {
-              setError('Cooldown manipulation detected.')
-              localStorage.removeItem('batchCompletionTime')
-              isCompletingBatchRef.current = false
-              return
+        // CRITICAL: Check for batch completion INSIDE the state update function
+        // This ensures atomic operation - no race conditions between count update and batch completion check
+        if (newCount === 6) {
+          console.log('[BATCH COMPLETE DETECTED] Starting batch completion flow...')
+          
+          // Set flag IMMEDIATELY to prevent any other operations
+          isCompletingBatchRef.current = true
+          
+          // Start day shift timer after completing batch of 6 flashcards
+          const completionTime = Date.now()
+          
+          // CRITICAL: Set localStorage FIRST, synchronously, before any async operations
+          // This ensures localStorage is the single source of truth
+          localStorage.setItem('hasAttemptedFlashcard', 'true')
+          localStorage.setItem('batchCompletionTime', completionTime.toString())
+          localStorage.setItem('batchCompleted', 'true') // Additional flag for extra safety
+          
+          // Use requestAnimationFrame to ensure state updates happen in next tick, but synchronously
+          // This prevents race conditions with other state updates
+          requestAnimationFrame(() => {
+            // Set hasBatchCompletionTime IMMEDIATELY
+            setHasBatchCompletionTime(true)
+            
+            // Force immediate timer activation to ensure it displays at 05:00
+            const totalSeconds = 300 // Exactly 5 minutes
+            const minutes = Math.floor(totalSeconds / 60)
+            const seconds = totalSeconds % 60
+            const timeString = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+            
+            // Set ALL timer state synchronously
+            setCooldownTimeRemaining(timeString)
+            setCooldownTimerActive(true)
+            
+            // Set prompts
+            setShowContinuePrompt(true)
+            setShowNewBatchAlert(true)
+            
+            console.log('[BATCH COMPLETE - handleSubmitAnswer] All state set synchronously:', {
+              timeString,
+              newCount,
+              hasBatchCompletionTime: true,
+              cooldownTimerActive: true
+            })
+            
+            // Calculate with helper
+            calculateCooldownTimer(completionTime)
+            
+            // Clear batch flashcards state
+            setBatchFlashcards([])
+            setCurrentBatchIndex(0)
+            
+            // Dispatch custom event to notify Navbar immediately
+            window.dispatchEvent(new Event('flashcardAttempted'))
+            
+            // Store batch completion time on backend (async, but don't block)
+            const token = getAuthToken()
+            if (token) {
+              completeBatch(token, completionTime).catch(err => {
+                const error = err as Error & { status?: number }
+                if (error.status === 429) {
+                  console.error('Cooldown manipulation detected')
+                  localStorage.removeItem('batchCompletionTime')
+                  localStorage.removeItem('batchCompleted')
+                  isCompletingBatchRef.current = false
+                  setHasBatchCompletionTime(false)
+                  setCooldownTimerActive(false)
+                  setShowContinuePrompt(false)
+                } else {
+                  console.error('Error storing batch completion time:', err)
+                  // Don't reset state on error - frontend timer will still work
+                }
+              })
             }
-            console.error('Error storing batch completion time:', err)
-          }
+          })
         }
         
-        // Clear batch flashcards state
-        setBatchFlashcards([])
-        setCurrentBatchIndex(0)
-        
-        // Dispatch custom event to notify Navbar immediately
-        window.dispatchEvent(new Event('flashcardAttempted'))
-        
-        // DON'T clear follow-up question or selected option - let result display
-        // DON'T clear error either - user needs to see any error messages
-        // DON'T return early - let the result display below
-        // The result will show with the cooldown timer visible above it
-      }
+        return newCount
+      })
       
       // Only clear follow-up question state if NOT at batch completion
-      // Clear states after 1st-5th flashcards (newCount < 6) to allow next flashcard to load
-      // Don't clear after 6th flashcard (newCount === 6) so result can display
-      // Don't clear after batch completion (newCount > 6) so result can display
-      if (newCount < 6) {
+      // Use flashcardCount state (which will be updated) to check, but also check localStorage flag
+      const batchCompleted = localStorage.getItem('batchCompleted') === 'true'
+      const currentCount = flashcardCount // This will be the old count, newCount is in the closure
+      
+      // Don't clear if batch is completed (check both state and localStorage)
+      if (!batchCompleted && currentCount < 5) {
+        // Only clear for 1st-4th flashcards (count 0-3, after increment will be 1-4)
         setFollowUpQuestion(null)
         setSelectedOption(null)
         setError(null)
