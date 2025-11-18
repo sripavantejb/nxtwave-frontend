@@ -88,6 +88,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   const completedSubtopicsRef = useRef<string[]>([])
   const flashcardCountRef = useRef(0)
   const handleStartNewBatchRef = useRef<(() => Promise<void>) | null>(null)
+  const isCompletingBatchRef = useRef(false) // Track if batch completion is in progress
   
   // Update refs when state changes
   useEffect(() => {
@@ -687,6 +688,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       setIsNewSession(true)
       setHasStarted(false)
       
+      // Reset batch completion flag
+      isCompletingBatchRef.current = false
+      
       // Clear batch completion time
       localStorage.removeItem('batchCompletionTime')
       localStorage.removeItem('hasAttemptedFlashcard')
@@ -744,13 +748,19 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       return
     }
 
-    // Stop loading if we've completed 6 flashcards
-    if (flashcardCount >= 6) {
-      setShowContinuePrompt(true)
-      setShowNewBatchAlert(true)
+    // Stop loading if we've completed 6 or more flashcards OR if batch completion is showing OR batch completion in progress
+    // Block if count >= 6 (after 6th flashcard is completed)
+    if (flashcardCount >= 6 || showContinuePrompt || isCompletingBatchRef.current) {
+      console.log('[loadFlashcard] BLOCKED - batch complete, flashcardCount:', flashcardCount, 'showContinuePrompt:', showContinuePrompt, 'isCompletingBatch:', isCompletingBatchRef.current)
+      if (flashcardCount >= 6) {
+        setShowContinuePrompt(true)
+        setShowNewBatchAlert(true)
+      }
       setLoading(false)
       return
     }
+    
+    console.log('[loadFlashcard] Loading new flashcard, current count:', flashcardCount)
 
     setLoading(true)
     setError(null)
@@ -776,8 +786,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     }
 
     try {
-      // STRICT ENFORCEMENT: Never load flashcard if we've already completed 6
-      if (flashcardCount >= 6) {
+      // Don't load flashcard if we've already completed 6 or more
+      // Block if count >= 6 (after 6th flashcard is completed)
+      if (flashcardCount >= 6 || isCompletingBatchRef.current) {
         setShowContinuePrompt(true)
         setShowNewBatchAlert(true)
         setCurrentFlashcard(null) // Clear any current flashcard
@@ -788,8 +799,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       // Priority 0: Check if we have batch flashcards loaded
       // When a batch exists, ONLY serve from the batch (strict batch mode)
       if (batchFlashcards.length > 0) {
-        // STRICT: Check count before serving from batch
-        if (flashcardCount >= 6) {
+        // Check count before serving from batch - allow when flashcardCount === 6
+        if (flashcardCount > 6) {
           setShowContinuePrompt(true)
           setShowNewBatchAlert(true)
           setCurrentFlashcard(null)
@@ -799,25 +810,36 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         if (currentBatchIndex < batchFlashcards.length) {
           // Serve next flashcard from batch
           const flashcard = batchFlashcards[currentBatchIndex]
+          console.log('[loadFlashcard] Serving flashcard from batch:', {
+            currentBatchIndex,
+            batchLength: batchFlashcards.length,
+            flashcardCount,
+            flashcardId: flashcard.questionId
+          })
           setCurrentFlashcard(flashcard)
           setCurrentBatchIndex(currentBatchIndex + 1)
           setSubmitResult(null)
           setLoading(false)
           return
         } else {
-          // Batch exhausted - should not happen if flashcardCount check works correctly
-          // But if it does, show continue prompt
-          setShowContinuePrompt(true)
-          setShowNewBatchAlert(true)
-          setCurrentFlashcard(null)
-          setLoading(false)
-          return
+          // Batch exhausted - if we haven't completed 6 flashcards yet, continue to other sources
+          // Only show continue prompt if we've actually completed more than 6 flashcards
+          if (flashcardCount > 6) {
+            setShowContinuePrompt(true)
+            setShowNewBatchAlert(true)
+            setCurrentFlashcard(null)
+            setLoading(false)
+            return
+          }
+          // If batch is exhausted but we haven't completed 6 flashcards, continue to other sources
+          // Clear batch state and fall through to Priority 1 or 2
+          console.log('[loadFlashcard] Batch exhausted but flashcardCount < 6, continuing to other sources')
         }
       }
       
       // Priority 1: Check for due reviews (only if no batch is loaded)
-      // STRICT: Due reviews also respect the 6-card limit
-      if (flashcardCount >= 6) {
+      // Due reviews also respect the 6-card limit - allow when flashcardCount === 6
+      if (flashcardCount > 6) {
         setShowContinuePrompt(true)
         setShowNewBatchAlert(true)
         setCurrentFlashcard(null)
@@ -827,8 +849,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       try {
         const dueQuestion = await getNextQuestion(token)
         if (dueQuestion && 'flashcard' in dueQuestion) {
-          // Double-check count before setting flashcard
-          if (flashcardCount >= 6) {
+          // Double-check count before setting flashcard - allow when flashcardCount === 6
+          if (flashcardCount > 6) {
             setShowContinuePrompt(true)
             setShowNewBatchAlert(true)
             setCurrentFlashcard(null)
@@ -885,8 +907,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       }
 
       // Priority 2: Get flashcard from session subtopics
-      // STRICT: Check count before loading from session subtopics
-      if (flashcardCount >= 6) {
+      // Check count before loading from session subtopics - allow when flashcardCount === 6
+      if (flashcardCount > 6) {
         setShowContinuePrompt(true)
         setShowNewBatchAlert(true)
         setCurrentFlashcard(null)
@@ -897,8 +919,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       const data = await fetchRandomFlashcardJson(token)
       console.log('Loaded flashcard data:', data)
       
-      // STRICT: Double-check count after fetching data
-      if (flashcardCount >= 6) {
+      // Double-check count after fetching data - allow when flashcardCount === 6
+      if (flashcardCount > 6) {
         setShowContinuePrompt(true)
         setShowNewBatchAlert(true)
         setCurrentFlashcard(null)
@@ -907,7 +929,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       }
       
       // Check if all subtopics are completed
-      if ('allCompleted' in data && data.allCompleted) {
+      // Don't reset session if we're on 5th/6th flashcard or batch completion in progress
+      if ('allCompleted' in data && data.allCompleted && !isCompletingBatchRef.current && flashcardCount < 5) {
         // Start new session (force new session by passing force parameter)
         try {
           const newSession = await startFlashcardSession(token, true) // Force new session
@@ -1085,6 +1108,12 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       }
       
       if (requiresSession) {
+        // Don't reset session if we're on 5th/6th flashcard or batch completion in progress
+        if (isCompletingBatchRef.current || flashcardCount >= 4) {
+          setError('Session error occurred. Please complete the current flashcard first.')
+          setLoading(false)
+          return
+        }
         // Try to start session and retry
         try {
           const token = getAuthToken()
@@ -1124,6 +1153,12 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
               setLoading(false)
               return
             } else if (retryData && 'allCompleted' in retryData && retryData.allCompleted) {
+              // Don't reset session if we're on 5th/6th flashcard or batch completion in progress
+              if (isCompletingBatchRef.current || flashcardCount >= 4) {
+                setError('All subtopics completed. Please complete the current flashcard first.')
+                setLoading(false)
+                return
+              }
               // All completed, start new session
               const newSession = await startFlashcardSession(token)
               setSessionSubtopics(newSession.sessionSubtopics)
@@ -1168,7 +1203,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     } finally {
       setLoading(false)
     }
-  }, [navigate, flashcardCount, isNewSession, batchFlashcards, currentBatchIndex])
+  }, [navigate, flashcardCount, isNewSession, batchFlashcards, currentBatchIndex, showContinuePrompt])
 
   // Listen for new batch start event after day shift
   useEffect(() => {
@@ -1194,6 +1229,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
           setFlashcardResults([])
           setIsNewSession(true)
           setHasStarted(false)
+          // Reset batch completion flag
+          isCompletingBatchRef.current = false
           // Clear persisted progress for new session
           localStorage.removeItem(FLASHCARD_STORAGE_KEY)
           // Clear day shift timer flag for new session
@@ -1217,13 +1254,30 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   }, [loadFlashcard, navigate])
 
   // Initial load - only if hasStarted is true and no currentFlashcard exists
-  // STRICT: Don't load if we've completed 6 flashcards
+  // STRICT: Don't load if we've completed 6 flashcards OR if showContinuePrompt is true
+  // ALSO don't load if we have a follow-up question active (prevents interrupting answer flow)
+  // Block when on 5th flashcard (count === 4) with follow-up, or 6th flashcard (count === 5) with follow-up
   useEffect(() => {
     const token = getAuthToken()
-    if (token && sessionSubtopics.length > 0 && hasStarted && !currentFlashcard && flashcardCount < 6) {
+    // Block if: count >= 6, showContinuePrompt, follow-up exists, submitResult exists, OR batch completion in progress
+    // Also block if on 5th flashcard (count === 4) or 6th flashcard (count === 5) with follow-up question
+    const isOn5thOr6thWithFollowUp = (flashcardCount === 4 || flashcardCount === 5) && followUpQuestion
+    const shouldBlock = flashcardCount >= 6 || showContinuePrompt || followUpQuestion || submitResult || isCompletingBatchRef.current || isOn5thOr6thWithFollowUp
+    
+    if (token && sessionSubtopics.length > 0 && hasStarted && !currentFlashcard && flashcardCount < 6 && !shouldBlock) {
+      console.log('[AUTO LOAD EFFECT] Loading flashcard automatically, flashcardCount:', flashcardCount)
       loadFlashcard()
+    } else if (shouldBlock) {
+      console.log('[AUTO LOAD EFFECT] BLOCKED - reason:', { 
+        flashcardCount, 
+        showContinuePrompt, 
+        hasFollowUp: !!followUpQuestion,
+        hasResult: !!submitResult,
+        isCompletingBatch: isCompletingBatchRef.current,
+        isOn5thOr6thWithFollowUp
+      })
     }
-  }, [sessionSubtopics.length, hasStarted, currentFlashcard, loadFlashcard, flashcardCount])
+  }, [sessionSubtopics.length, hasStarted, currentFlashcard, loadFlashcard, flashcardCount, showContinuePrompt, followUpQuestion, submitResult])
 
   const loadFollowUpQuestion = useCallback(async (topicId: string, diff: string, subTopic?: string, flashcardQuestionId?: string) => {
     try {
@@ -1362,7 +1416,10 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       setSubmitResult(timeoutResult)
 
       // If we've completed 6 flashcards, show continue prompt and start day shift timer
-      if (newCount % 6 === 0) {
+      // Use newCount === 6 instead of newCount % 6 === 0 to ensure it only triggers at exactly 6
+      if (newCount === 6) {
+        // Set flag to prevent auto-load during batch completion
+        isCompletingBatchRef.current = true
         // Start day shift timer after completing batch of 6 flashcards
         const completionTime = Date.now()
         
@@ -1393,8 +1450,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         setShowContinuePrompt(true)
         setShowNewBatchAlert(true)
         
-        // STRICT: Clear current flashcard when batch is complete
-        setCurrentFlashcard(null)
+        // DON'T clear current flashcard - this would trigger auto-load effect
+        // Keep the flashcard visible so user can see what they were answering
+        // setCurrentFlashcard(null)  // COMMENTED OUT to prevent auto-reload
         
         // Store batch completion time on backend
         const token = getAuthToken()
@@ -1425,6 +1483,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         setFollowUpQuestion(null)
         setSelectedOption(null)
         setError(null)
+      } else {
+        // Batch is complete, ensure flag is set
+        isCompletingBatchRef.current = true
       }
       // Don't automatically load next flashcard - wait for user to click "Next Flashcard" button
     } catch (err) {
@@ -1586,8 +1647,12 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       console.log('[handleSubmitAnswer] newCount:', newCount, 'flashcardCount:', flashcardCount)
 
       // If we've completed 6 flashcards, show continue prompt and start day shift timer
-      if (newCount % 6 === 0) {
+      // Check if newCount equals 6 (not just divisible by 6) to ensure we've completed exactly 6 flashcards
+      if (newCount === 6) {
         console.log('[BATCH COMPLETE DETECTED] Starting batch completion flow...')
+        // Set flag to prevent auto-load during batch completion
+        isCompletingBatchRef.current = true
+        
         // Start day shift timer after completing batch of 6 flashcards
         const completionTime = Date.now()
         
@@ -1624,8 +1689,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         setShowNewBatchAlert(true)
         console.log('[BATCH COMPLETE - handleSubmitAnswer] Prompts set, batch completion complete')
         
-        // STRICT: Clear current flashcard when batch is complete
-        setCurrentFlashcard(null)
+        // DON'T clear current flashcard - this would trigger auto-load effect
+        // Keep the flashcard visible so user can see what they were answering
+        // setCurrentFlashcard(null)  // COMMENTED OUT to prevent auto-reload
         
         // Store batch completion time on backend (MUST succeed)
         const token = getAuthToken()
@@ -1637,6 +1703,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
             if (error.status === 429) {
               setError('Cooldown manipulation detected.')
               localStorage.removeItem('batchCompletionTime')
+              isCompletingBatchRef.current = false
               return
             }
             console.error('Error storing batch completion time:', err)
@@ -1656,9 +1723,11 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         // The result will show with the cooldown timer visible above it
       }
       
-      // Only clear follow-up question state if NOT at batch completion (count < 6)
-      // If batch is complete, leave states as-is so result displays
-      if (flashcardCount + 1 < 6) {
+      // Only clear follow-up question state if NOT at batch completion
+      // Clear states after 1st-5th flashcards (newCount < 6) to allow next flashcard to load
+      // Don't clear after 6th flashcard (newCount === 6) so result can display
+      // Don't clear after batch completion (newCount > 6) so result can display
+      if (newCount < 6) {
         setFollowUpQuestion(null)
         setSelectedOption(null)
         setError(null)
@@ -1672,8 +1741,10 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   }
 
   const handleNextFlashcard = () => {
-    // STRICT: Don't load next flashcard if continue prompt is showing OR if we've completed 6 cards
-    if (showContinuePrompt || flashcardCount >= 6) {
+    // Don't load next flashcard if continue prompt is showing (batch completion triggered)
+    // Allow loading if flashcardCount === 6 (after 5th flashcard, need to load 6th)
+    // Block only if flashcardCount > 6 (after 6th flashcard, batch is complete)
+    if (showContinuePrompt || flashcardCount > 6) {
       return
     }
     // Clear result state and reset all necessary states before loading next flashcard
@@ -1954,8 +2025,9 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       {/* Cooldown Timer - Display at top when batch is completed OR during active session */}
       {/* Show timer if: batch complete (6 cards) OR continue prompt showing OR timer active */}
       {/* ALWAYS show if flashcardCount >= 6, OR check other conditions with shouldShowCooldownTimer */}
-      {(flashcardCount >= 6 || ((showContinuePrompt || cooldownTimerActive) && shouldShowCooldownTimer)) && (
-        <div style={{
+      {/* Show timer when: flashcardCount >= 6 OR showContinuePrompt OR (cooldownTimerActive && shouldShowCooldownTimer) */}
+      {((flashcardCount >= 6 || showContinuePrompt) || (cooldownTimerActive && shouldShowCooldownTimer)) && (    
+            <div style={{
           marginBottom: '20px',
           padding: '16px',
           background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
