@@ -19,6 +19,126 @@ import './App.css'
 import './index.css'
 import { pingHealth } from './api/client'
 
+function BatchCooldownTimer({ shouldStart = false }: { shouldStart?: boolean }) {
+  // Initialize timer state from batchCompletionTime in localStorage
+  const [timeRemaining, setTimeRemaining] = useState(() => {
+    if (typeof window === 'undefined') return '00:00'
+    const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
+    if (batchCompletionTimeStr) {
+      const completionTime = parseInt(batchCompletionTimeStr, 10)
+      if (!isNaN(completionTime)) {
+        const targetTime = completionTime + (5 * 60 * 1000) // 5 minutes
+        const now = Date.now()
+        const remaining = targetTime - now
+        if (remaining > 0) {
+          const totalSeconds = Math.max(0, Math.floor(remaining / 1000))
+          const minutes = Math.floor(totalSeconds / 60)
+          const seconds = totalSeconds % 60
+          return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+        }
+      }
+    }
+    return '00:00'
+  })
+  const intervalRef = useRef<number | null>(null)
+  const hasDispatchedRef = useRef<boolean>(false)
+
+  useEffect(() => {
+    // Only start timer if shouldStart is true
+    if (!shouldStart) {
+      setTimeRemaining('00:00')
+      hasDispatchedRef.current = false
+      if (intervalRef.current !== null) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+      return
+    }
+
+    // Get batchCompletionTime from localStorage
+    const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
+    if (!batchCompletionTimeStr) {
+      setTimeRemaining('00:00')
+      return
+    }
+
+    const completionTime = parseInt(batchCompletionTimeStr, 10)
+    if (isNaN(completionTime)) {
+      setTimeRemaining('00:00')
+      return
+    }
+
+    const targetTime = completionTime + (5 * 60 * 1000) // 5 minutes
+
+    const updateTimer = () => {
+      const now = Date.now()
+      const remaining = targetTime - now
+
+      if (remaining <= 0) {
+        setTimeRemaining('00:00')
+        // Clear batchCompletionTime when cooldown expires
+        if (!hasDispatchedRef.current) {
+          hasDispatchedRef.current = true
+          localStorage.removeItem('batchCompletionTime')
+          window.dispatchEvent(new Event('batchCooldownExpired'))
+        }
+      } else {
+        const totalSeconds = Math.floor(remaining / 1000)
+        const minutes = Math.floor(totalSeconds / 60)
+        const seconds = totalSeconds % 60
+        setTimeRemaining(`${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`)
+        hasDispatchedRef.current = false
+      }
+    }
+
+    // Update immediately
+    updateTimer()
+
+    // Update every second
+    intervalRef.current = window.setInterval(updateTimer, 1000)
+
+    return () => {
+      if (intervalRef.current !== null) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+  }, [shouldStart])
+
+  // Listen for storage events (other tabs) and custom events (same tab)
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
+      if (!batchCompletionTimeStr) {
+        setTimeRemaining('00:00')
+        hasDispatchedRef.current = false
+      }
+    }
+
+    window.addEventListener('storage', handleStorageChange)
+    window.addEventListener('flashcardAttempted', handleStorageChange)
+    window.addEventListener('batchCooldownExpired', handleStorageChange)
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+      window.removeEventListener('flashcardAttempted', handleStorageChange)
+      window.removeEventListener('batchCooldownExpired', handleStorageChange)
+    }
+  }, [])
+
+  // Don't render if timer is at 00:00
+  if (timeRemaining === '00:00') {
+    return null
+  }
+
+  return (
+    <div className="day-shift-timer">
+      <span className="day-shift-label">Batch Cooldown:</span>
+      <span className="day-shift-time">{timeRemaining}</span>
+    </div>
+  )
+}
+
 function DayShiftTimer({ shouldStart = false }: { shouldStart?: boolean }) {
   // Initialize timer state from localStorage if available (lazy initializer)
   const [timeRemaining, setTimeRemaining] = useState(() => {
@@ -180,6 +300,7 @@ function DayShiftTimer({ shouldStart = false }: { shouldStart?: boolean }) {
 function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [hasAttemptedFlashcard, setHasAttemptedFlashcard] = useState(false)
+  const [hasBatchCompletionTime, setHasBatchCompletionTime] = useState(false)
   const location = useLocation()
   const isHomePage = location.pathname === '/'
   const { isAuthenticated, user, logout } = useAuth()
@@ -200,6 +321,26 @@ function Navbar() {
     return () => {
       window.removeEventListener('storage', checkFlashcardAttempt)
       window.removeEventListener('flashcardAttempted', checkFlashcardAttempt)
+    }
+  }, [])
+
+  // Check if batch completion time exists
+  useEffect(() => {
+    const checkBatchCompletionTime = () => {
+      const completionTime = localStorage.getItem('batchCompletionTime')
+      setHasBatchCompletionTime(!!completionTime)
+    }
+    
+    checkBatchCompletionTime()
+    // Listen for storage changes and custom events
+    window.addEventListener('storage', checkBatchCompletionTime)
+    window.addEventListener('flashcardAttempted', checkBatchCompletionTime)
+    window.addEventListener('batchCooldownExpired', checkBatchCompletionTime)
+    
+    return () => {
+      window.removeEventListener('storage', checkBatchCompletionTime)
+      window.removeEventListener('flashcardAttempted', checkBatchCompletionTime)
+      window.removeEventListener('batchCooldownExpired', checkBatchCompletionTime)
     }
   }, [])
 
@@ -233,6 +374,9 @@ function Navbar() {
   return (
     <nav className="navbar">
       <div className="container navbar-inner">
+        {isAuthenticated && hasBatchCompletionTime && (
+          <BatchCooldownTimer shouldStart={true} />
+        )}
         {isAuthenticated && hasAttemptedFlashcard && (
           <DayShiftTimer shouldStart={true} />
         )}
