@@ -318,7 +318,27 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         // Only clear if it's a truly new session
         if (forceNew || !progressRestored) {
           localStorage.removeItem('hasAttemptedFlashcard')
-          localStorage.removeItem('batchCompletionTime')
+          
+          // Only clear batchCompletionTime if cooldown has expired (5 minutes have passed)
+          const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
+          if (batchCompletionTimeStr) {
+            const completionTime = parseInt(batchCompletionTimeStr, 10)
+            if (!isNaN(completionTime)) {
+              const now = Date.now()
+              const elapsed = now - completionTime
+              const cooldownMs = 5 * 60 * 1000 // 5 minutes
+              
+              // Only clear if cooldown has expired
+              if (elapsed >= cooldownMs) {
+                localStorage.removeItem('batchCompletionTime')
+              }
+              // If cooldown is still active, preserve batchCompletionTime
+            } else {
+              // Invalid timestamp, clear it
+              localStorage.removeItem('batchCompletionTime')
+            }
+          }
+          
           // Dispatch event to notify Navbar that flag was cleared
           window.dispatchEvent(new Event('flashcardAttempted'))
         }
@@ -685,6 +705,44 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         // No due reviews, continue to priority 2
       }
 
+      // Check cooldown before Priority 2 (session subtopics)
+      // Priority 1 (due reviews) bypasses cooldown as they're part of spaced repetition
+      try {
+        const cooldownStatus = await getUserCooldown(token)
+        if (!cooldownStatus.canStart) {
+          // Cooldown is still active - show error and prevent loading
+          setCooldownTimeRemaining(cooldownStatus.remainingTime)
+          setCooldownTimerActive(true)
+          setError(`Please wait ${cooldownStatus.remainingTime} before loading new flashcards. The cooldown timer is active.`)
+          setLoading(false)
+          return
+        }
+      } catch (cooldownErr) {
+        // If cooldown check fails, also check localStorage as fallback
+        const batchCompletionTimeStr = localStorage.getItem('batchCompletionTime')
+        if (batchCompletionTimeStr) {
+          const completionTime = parseInt(batchCompletionTimeStr, 10)
+          if (!isNaN(completionTime)) {
+            const targetTime = completionTime + (5 * 60 * 1000) // 5 minutes
+            const now = Date.now()
+            if (now < targetTime) {
+              // Client-side cooldown still active
+              const remaining = targetTime - now
+              const totalSeconds = Math.floor(remaining / 1000)
+              const minutes = Math.floor(totalSeconds / 60)
+              const seconds = totalSeconds % 60
+              const remainingTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+              setCooldownTimeRemaining(remainingTime)
+              setCooldownTimerActive(true)
+              setError(`Please wait ${remainingTime} before loading new flashcards. The cooldown timer is active.`)
+              setLoading(false)
+              return
+            }
+          }
+        }
+        // If cooldown check fails and no localStorage, continue to Priority 2
+      }
+
       // Priority 2: Get flashcard from session subtopics
       const data = await fetchRandomFlashcardJson(token)
       console.log('Loaded flashcard data:', data)
@@ -796,8 +854,19 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
         }
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load flashcard'
-      const requiresSession = (err as { requiresSession?: boolean })?.requiresSession || errorMessage.includes('No active session') || errorMessage.includes('requiresSession')
+      const error = err as Error & { status?: number; remainingTime?: string; remainingSeconds?: number; canStart?: boolean; requiresSession?: boolean }
+      const errorMessage = error.message || 'Failed to load flashcard'
+      const requiresSession = error.requiresSession || errorMessage.includes('No active session') || errorMessage.includes('requiresSession')
+      
+      // Handle cooldown error (429) from backend
+      if (error.status === 429 || error.remainingTime) {
+        const remainingTime = error.remainingTime || '00:00'
+        setCooldownTimeRemaining(remainingTime)
+        setCooldownTimerActive(true)
+        setError(`Please wait ${remainingTime} before loading new flashcards. The cooldown timer is active.`)
+        setLoading(false)
+        return
+      }
       
       if (requiresSession) {
         // Try to start session and retry
@@ -1464,10 +1533,16 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
     )
   }
 
+  // Check localStorage as fallback to ensure timer shows even if state is out of sync
+  const batchCompletionTimeFromStorage = localStorage.getItem('batchCompletionTime')
+  const hasBatchCompletionTimeFromStorage = batchCompletionTimeFromStorage !== null
+  // Use state if available, otherwise fall back to localStorage check
+  const shouldShowCooldownTimer = hasBatchCompletionTime || hasBatchCompletionTimeFromStorage
+
   return (
     <div className={`flashcard-system ${className}`}>
       {/* Cooldown Timer - Display at top when batch is completed OR during active session */}
-      {((showContinuePrompt || cooldownTimerActive) && hasBatchCompletionTime) && (
+      {((showContinuePrompt || cooldownTimerActive) && shouldShowCooldownTimer) && (
         <div style={{
           marginBottom: '20px',
           padding: '16px',
@@ -1563,7 +1638,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       {currentFlashcard && !followUpQuestion && (
         <div className="flashcard-card">
           {/* Cooldown Timer on Flashcard Card - Show when batch completion time exists */}
-          {cooldownTimerActive && hasBatchCompletionTime && !showContinuePrompt && (
+          {cooldownTimerActive && shouldShowCooldownTimer && !showContinuePrompt && (
             <div style={{
               marginBottom: '20px',
               padding: '12px',
