@@ -604,12 +604,19 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
 
   // Trigger sync when batch completes - this ensures timer appears immediately for first batch
   useEffect(() => {
-    if ((flashcardCount >= 6 || showContinuePrompt) && !cooldownTimerActive) {
-      // If timer is not active but batch is complete, force sync
-      console.log('[SYNC EFFECT] Forcing cooldown sync because batch is complete but timer inactive')
+    console.log('[SYNC EFFECT] Checking sync need:', {
+      flashcardCount,
+      showContinuePrompt,
+      cooldownTimerActive,
+      hasBatchCompletionTime
+    })
+    
+    if ((flashcardCount >= 6 || showContinuePrompt)) {
+      // If batch is complete, ensure timer state is synced
+      console.log('[SYNC EFFECT] Batch complete detected, forcing cooldown sync')
       syncCooldownState()
     }
-  }, [flashcardCount, showContinuePrompt, syncCooldownState, cooldownTimerActive])
+  }, [flashcardCount, showContinuePrompt, syncCooldownState, cooldownTimerActive, hasBatchCompletionTime])
 
   // Handler for starting new batch
   const handleStartNewBatch = useCallback(async () => {
@@ -1816,6 +1823,13 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
   // Use state if available, otherwise fall back to localStorage check
   const shouldShowCooldownTimer = hasBatchCompletionTime || hasBatchCompletionTimeFromStorage
   
+  console.log('[RENDER] shouldShowCooldownTimer calculation:', {
+    hasBatchCompletionTime,
+    hasBatchCompletionTimeFromStorage,
+    batchCompletionTimeFromStorage,
+    shouldShowCooldownTimer
+  })
+  
   // Debug log for timer display - show whenever batch might be complete
   if (flashcardCount >= 6 || showContinuePrompt || cooldownTimerActive) {
     console.log('[TIMER DISPLAY CHECK]', {
@@ -1939,7 +1953,8 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
 
       {/* Cooldown Timer - Display at top when batch is completed OR during active session */}
       {/* Show timer if: batch complete (6 cards) OR continue prompt showing OR timer active */}
-      {((flashcardCount >= 6 || showContinuePrompt || cooldownTimerActive) && shouldShowCooldownTimer) && (
+      {/* ALWAYS show if flashcardCount >= 6, OR check other conditions with shouldShowCooldownTimer */}
+      {(flashcardCount >= 6 || ((showContinuePrompt || cooldownTimerActive) && shouldShowCooldownTimer)) && (
         <div style={{
           marginBottom: '20px',
           padding: '16px',
