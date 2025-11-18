@@ -1030,7 +1030,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       setSubmitResult(timeoutResult)
 
       // If we've completed 6 flashcards, show continue prompt and start day shift timer
-      if (newCount >= 6) {
+      if (newCount % 6 === 0) {
         // Start day shift timer after completing batch of 6 flashcards
         const completionTime = Date.now()
         localStorage.setItem('hasAttemptedFlashcard', 'true')
@@ -1219,7 +1219,7 @@ export default function FlashcardSystem({ className = '' }: FlashcardSystemProps
       setFlashcardCount(newCount)
 
       // If we've completed 6 flashcards, show continue prompt and start day shift timer
-      if (newCount >= 6) {
+      if (newCount % 6 === 0) {
         // Start day shift timer after completing batch of 6 flashcards
         const completionTime = Date.now()
         localStorage.setItem('hasAttemptedFlashcard', 'true')
